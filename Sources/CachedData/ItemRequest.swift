@@ -17,14 +17,12 @@ struct ItemRequest<Item: DataFetcherItem>: FetchKeyRequest {
             return []
         }
         
-        let ids = try StoredCacheViewItem.where {
-            $0.id == viewId
-        }.fetchAll(db).flatMap { $0.item_ids }
-        
-        let items = try StoredCacheItem.where {
-            $0.id.in(ids)
-        }.fetchAll(db)
-        
-        return items.compactMap { .init(fromCache: $0) }
+        return try StoredCacheItem
+            .join(StoredCacheItemMap.all) { $0.id.eq($1.item_id) }
+            .where { $1.id == viewId }
+            .order { $1.order }
+            .fetchAll(db)
+            .map { $0.0 }
+            .map { .init(fromCache: $0) }
     }
 }

@@ -9,11 +9,61 @@ import SwiftUI
 import ErrorKit
 import SharingGRDB
 
+@MainActor
+public class DataMutation<Adaptor: DataFetcherAdapter> {
+    let adaptor: Adaptor
+    
+    @Dependency(\.defaultDatabase) var db
+    
+    public init(adaptor: Adaptor) {
+        self.adaptor = adaptor
+    }
+    
+    private func updateState<Item: DataFetcherItem>(_ item: Item, state: Int) async throws {
+        try await db.write { db in
+            try StoredCacheItem.where {
+                $0.id == item.idString
+            }
+            .update { $0.state = state }
+            .execute(db)
+        }
+    }
+    
+    public func delete<Item: DataFetcherItem>(_ item: Item) async throws {
+        // first set the item in the cache that is being deleted
+        try await updateState(item, state: 1)
+        
+        do {
+            // fire the real mutation
+            try await adaptor.delete(item)
+            
+            // delete for good
+            try! await db.write { db in
+                try StoredCacheItem.where {
+                    $0.id == item.idString
+                }
+                .delete()
+                .execute(db)
+            }
+        } catch {
+            // roll back if deletion fails
+            try await updateState(item, state: 0)
+        }
+    }
+    
+    public func upsert<Item: DataFetcherItem>(_ item: Item) async throws {
+        try await db.write { db in
+            try StoredCacheItem.where {
+                $0.id == item.idString
+            }
+        }
+    }
+}
+
+
 @Observable
 @MainActor
-public class DataFetcher<Adaptor: DataFetcherAdapter> {
-    public typealias Item = Adaptor.Item
-    
+public class DataFetcher<Item: DataFetcherItem, Adaptor: DataFetcherAdapter> {
     @ObservationIgnored
     var adaptor: Adaptor
     
@@ -50,7 +100,7 @@ public class DataFetcher<Adaptor: DataFetcherAdapter> {
     private func fetchFromRemote() async throws {
         adaptor.params.setEndCursor(adaptor.pageInfo?.endCursor)
         
-        let (newItems, pageInfo) = try await adaptor.fetch()
+        let (newItems, pageInfo) = try await adaptor.fetch(ofType: Item.self)
 
         let finalItems: [Item]
         
@@ -65,14 +115,23 @@ public class DataFetcher<Adaptor: DataFetcherAdapter> {
         let id = viewId
         
         try await database.write { db in
-            let itemIds = finalItems.map { $0.stringId }
-            
-            try StoredCacheViewItem
-                .insert(or: .replace, StoredCacheViewItem(id: id, item_ids: itemIds))
-                .execute(db)
+            // delete all maps
+            try StoredCacheItemMap.where {
+                $0.id == id
+            }
+            .delete()
+            .execute(db)
             
             try StoredCacheItem
                 .insert(or: .replace, finalItems.map { $0.toCacheItem() })
+                .execute(db)
+            
+            let maps = finalItems.enumerated().map { index, item in
+                StoredCacheItemMap(id: id, item_id: item.idString, order: index)
+            }
+            
+            try StoredCacheItemMap
+                .insert(or: .fail, maps)
                 .execute(db)
         }
     }
@@ -84,7 +143,7 @@ public class DataFetcher<Adaptor: DataFetcherAdapter> {
             let id = viewId
             
             try await database.write { db in
-                try StoredCacheViewItem
+                try StoredCacheItemMap
                     .where { $0.id == id }
                     .delete()
                     .execute(db)

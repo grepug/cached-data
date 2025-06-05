@@ -28,7 +28,8 @@ extension DatabaseWriter where Self == DatabaseQueue {
                   "id" TEXT PRIMARY KEY NOT NULL,
                   "type_name" TEXT NOT NULL,
                   "created_at" TEXT NOT NULL,
-                  "json_string" TEXT NOT NULL
+                  "json_string" TEXT NOT NULL,
+                  "state" INTEGER NOT NULL
                 );
                 """
             )
@@ -36,9 +37,10 @@ extension DatabaseWriter where Self == DatabaseQueue {
             
             try #sql(
                 """
-                CREATE TABLE "storedCacheViewItems" (
+                CREATE TABLE "storedCacheItemMaps" (
                   "id" TEXT PRIMARY KEY NOT NULL,
-                  "item_ids_json" TEXT NOT NULL
+                  "item_id" TEXT NOT NULL,
+                  "order" INTEGER NOT NULL
                 );
                 """
             )
