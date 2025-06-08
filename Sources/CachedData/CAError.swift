@@ -18,9 +18,12 @@ public extension NotifiableError {
 }
 
 public enum CAFetchError: NotifiableError {
+    static let maxPageCount = 100
+    
     case noData
     case graphQLError([String])
     case noMoreNextPage
+    case maxPageReached
     case caught(Error)
     
     public var userNotable: Bool {
@@ -28,6 +31,7 @@ public enum CAFetchError: NotifiableError {
         case .noData: false
         case .graphQLError: true
         case .noMoreNextPage: false
+        case .maxPageReached: true
         case .caught: true
         }
     }
@@ -40,6 +44,8 @@ public enum CAFetchError: NotifiableError {
             "GraphQL 错误: \(messages.joined(separator: ", "))"
         case .noMoreNextPage:
             "没有更多数据可加载"
+        case .maxPageReached:
+            "已达到最大页数限制"
         case .caught(let error):
             ErrorKit.userFriendlyMessage(for: error)
         }

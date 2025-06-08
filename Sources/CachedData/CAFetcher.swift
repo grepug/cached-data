@@ -153,9 +153,7 @@ private extension CAFetcher {
         
         firstFetchState = .pending
         
-        try await CAError.catch { @Sendable in
-            try await $fetchedItems.load(ItemRequest(fetchType: fetchType), animation: .default)
-        }
+        try await loadRequest(all: false)
         
         // ensure the items are loaded
         if !fetchedItems.isEmpty {
@@ -163,6 +161,8 @@ private extension CAFetcher {
         }
         
         try await load(reset: true)
+        
+        try await loadRequest(all: true)
         
         if firstFetchState != .fetched {
             firstFetchState = .fetched
@@ -183,23 +183,27 @@ private extension CAFetcher {
             return
         }
         
+        if case .fetchAll(_, allPages: let allPages) = fetchType, allPages {
+            assertionFailure()
+            return
+        }
+        
         switch fetchType {
-        case .fetchAll(viewId: let viewId):
+        case .fetchAll(viewId: let viewId, let allPages):
             if reset {
                 pageInfo = nil
             }
-            params = params.setEndCursor(pageInfo?.endCursor)
-            try await fetch(viewId: viewId)
+            try await fetch(viewId: viewId, allPages: allPages)
         case .fetchOne:
             try await fetch(viewId: nil)
         }
     }
     
-    private func fetch(viewId: String?) async throws(CAError) {
+    private func fetch(viewId: String?, allPages: Bool = false) async throws(CAError) {
         let isFetchOne = viewId == nil
-        
-        let (newItems, newPageInfo) = try await CAFetchError.catch { @Sendable in
-            try await Item.fetch(params: params)
+         
+        let newItems = try await CAFetchError.catch { @Sendable in
+            try await fetchItems(fetchAll: allPages)
         } mapTo: {
             CAError.fetchFailed($0)
         }
@@ -214,8 +218,6 @@ private extension CAFetcher {
             assert(finalItems.count == 1)
         }
         
-        pageInfo = newPageInfo
-            
         try await CAError.catch { @Sendable in
             try await database.write { db in
                 // delete all maps
@@ -248,6 +250,43 @@ private extension CAFetcher {
                 }
             }
         }
+    }
+    
+    private func loadRequest(all: Bool) async throws(CAError) {
+        try await CAError.catch { @Sendable in
+            try await $fetchedItems.load(
+                ItemRequest(
+                    fetchType: fetchType,
+                    loadingAll: all,
+                ),
+                animation: .default,
+            )
+        }
+    }
+    
+    private func fetchItems(fetchAll: Bool) async throws -> [Item] {
+        var finalItems: [Item] = []
+        var fetched = false
+        var maxPage = CAFetchError.maxPageCount
+        
+        while (hasNext && fetchAll) || !fetched {
+            fetched = true
+            
+            let (newItems, newPageInfo) = try await Item.fetch(params: params)
+            
+            finalItems.append(contentsOf: newItems)
+            
+            pageInfo = newPageInfo
+            params = params.setEndCursor(pageInfo?.endCursor)
+            
+            maxPage -= 1
+            
+            if maxPage == 0 {
+                throw CAFetchError.maxPageReached
+            }
+        }
+        
+        return finalItems
     }
     
     func handleEvent(_ event: CACacheUpdateEvent) {
