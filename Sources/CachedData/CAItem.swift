@@ -26,6 +26,8 @@ public protocol CAItem: Codable, Sendable, Identifiable {
     
     init(fromCacheJSONString string: String, state: CAItemState)
     
+    init()
+    
     static var typeName: String { get }
     
     static func fetch(params: Params) async throws -> ([Self], PageInfo)

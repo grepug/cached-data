@@ -44,7 +44,7 @@ public class CAFetcher<Item: CAItem>  {
     }
     
     @ObservationIgnored
-    let viewId: String
+    let fetchType: CAFetchType
     
     @ObservationIgnored
     @Dependency(\.defaultDatabase) var database
@@ -62,7 +62,11 @@ public class CAFetcher<Item: CAItem>  {
         fetchedItems
     }
     
-    public var item: Item? {
+    public var item: Item {
+        fetchedItems.first ?? .init()
+    }
+    
+    public var optionalItem: Item? {
         fetchedItems.first
     }
     
@@ -70,8 +74,8 @@ public class CAFetcher<Item: CAItem>  {
         pageInfo?.hasNext == true
     }
     
-    public init(viewId: String, itemType: Item.Type, params: Params) {
-        self.viewId = viewId
+    public init(_ fetchType: CAFetchType, itemType: Item.Type, params: Params) {
+        self.fetchType = fetchType
         self.params = params
         
         // ⚠️ FIXME: it possibly cause a self retain cycle
@@ -122,7 +126,7 @@ private extension CAFetcher {
         firstFetchState = .pending
         
         try await CAError.catch { @Sendable in
-            try await $fetchedItems.load(ItemRequest(viewId: viewId), animation: .default)
+            try await $fetchedItems.load(ItemRequest(fetchType: fetchType), animation: .default)
         }
         
         // ensure the items are loaded
@@ -157,7 +161,17 @@ private extension CAFetcher {
         
         params = params.setEndCursor(pageInfo?.endCursor)
         
-        let viewId = viewId
+        switch fetchType {
+        case .fetchAll(viewId: let viewId):
+            try await fetch(viewId: viewId)
+        case .fetchOne:
+            try await fetch(viewId: nil)
+        }
+    
+    }
+    
+    private func fetch(viewId: String?) async throws(CAError) {
+        let isFetchOne = viewId == nil
         
         let (newItems, newPageInfo) = try await CAFetchError.catch { @Sendable in
             try await Item.fetch(params: params)
@@ -165,10 +179,14 @@ private extension CAFetcher {
             CAError.fetchFailed($0)
         }
         
-        let finalItems: [Item] = if pageInfo == nil {
+        let finalItems: [Item] = if pageInfo == nil || isFetchOne {
             newItems
         } else {
             fetchedItems + newItems
+        }
+        
+        if isFetchOne {
+            assert(finalItems.count == 1)
         }
         
         pageInfo = newPageInfo
@@ -177,28 +195,32 @@ private extension CAFetcher {
             try await database.write { db in
                 // delete all maps
                 
-                try db.execute(sql:
-                """
-                DELETE FROM "storedCacheItemMaps"
-                WHERE "view_id" = '\(viewId)'
-                  AND "item_id" IN (
-                    SELECT "id" FROM "storedCacheItems"
-                    WHERE "type_name" = '\(Item.typeName)'
-                  );                
-                """
-                )
+                if let viewId {
+                    try db.execute(sql:
+                        """
+                        DELETE FROM "storedCacheItemMaps"
+                        WHERE "view_id" = '\(viewId)'
+                          AND "item_id" IN (
+                            SELECT "id" FROM "storedCacheItems"
+                            WHERE "type_name" = '\(Item.typeName)'
+                          );                
+                        """
+                    )
+                }
                 
                 try StoredCacheItem
                     .insert(or: .replace, finalItems.map { $0.toCacheItem(state: .normal) })
                     .execute(db)
                 
-                let maps = finalItems.enumerated().map { index, item in
-                    StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: index)
+                if let viewId {
+                    let maps = finalItems.enumerated().map { index, item in
+                        StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: index)
+                    }
+                    
+                    try StoredCacheItemMap
+                        .insert(or: .fail, maps)
+                        .execute(db)
                 }
-                
-                try StoredCacheItemMap
-                    .insert(or: .fail, maps)
-                    .execute(db)
             }
         }
     }

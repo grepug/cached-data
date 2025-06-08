@@ -8,9 +8,9 @@
 import SharingGRDB
 
 public protocol CAMutation: Sendable {
-    func delete<Item: CAMutableItem>(_ item: Item) async throws
-    func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws
-    func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws
+    func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError)
+    func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws(CAMutationError)
+    func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws(CAMutationError)
 }
 
 private enum MutationKey: DependencyKey {
@@ -44,7 +44,7 @@ public class DataMutation: CAMutation {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
     
-    public func delete<Item: CAMutableItem>(_ item: Item) async throws {
+    public func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
         do {
             try await deleteImpl(item)
         } catch {
@@ -53,7 +53,7 @@ public class DataMutation: CAMutation {
         }
     }
     
-    public func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws {
+    public func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws(CAMutationError) {
         do {
             try await updateImpl(item, viewId: viewId, action: action)
         } catch {
@@ -62,7 +62,7 @@ public class DataMutation: CAMutation {
         }
     }
     
-    public func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws {
+    public func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws(CAMutationError) {
         do {
             try await insertImpl(item, viewId: viewId, action: action)
         } catch {
@@ -74,7 +74,7 @@ public class DataMutation: CAMutation {
 
 // MARK: - Private Implementation
 private extension DataMutation {
-    func deleteImpl<Item: CAMutableItem>(_ item: Item) async throws {
+    func deleteImpl<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
         // first set the item in the cache that is being deleted
         try await changeState(item, state: .deleting)
         
@@ -91,8 +91,6 @@ private extension DataMutation {
                     .delete()
                     .execute(db)
                 }
-            } mapTo: {
-                CAError.mutationFailed($0)
             }
         } catch {
             // roll back if deletion fails
@@ -101,7 +99,7 @@ private extension DataMutation {
         }
     }
     
-    func updateImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws {
+    func updateImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws(CAMutationError) {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
                 try StoredCacheItem.where {
@@ -121,14 +119,12 @@ private extension DataMutation {
                     .execute(db)
                 }
             }
-        } mapTo: {
-            CAError.mutationFailed($0)
         }
         
         try await item.update()
     }
     
-    func insertImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws {
+    func insertImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws(CAMutationError) {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
                 let cacheItem = item.toCacheItem(state: .inserting)
@@ -158,14 +154,12 @@ private extension DataMutation {
                     fatalError("unimplemented!")
                 }
             }
-        } mapTo: {
-            CAError.mutationFailed($0)
         }
         
         try await item.insert()
     }
     
-    func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws {
+    func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws(CAMutationError) {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
                 try StoredCacheItem.where {
@@ -174,8 +168,6 @@ private extension DataMutation {
                 .update { $0.state = state.rawValue }
                 .execute(db)
             }
-        } mapTo: {
-            CAError.mutationFailed($0)
         }
     }
 }
