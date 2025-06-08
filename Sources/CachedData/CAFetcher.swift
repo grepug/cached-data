@@ -33,14 +33,20 @@ public class CAFetcher<Item: CAItem>  {
     
     var pageInfo: PageInfo?
     
-    enum FirstFetchState {
-        case pending, fetched, idle
+    enum State: Int {
+        case initializing, loadingFirst, idle, loading
     }
     
-    var firstFetchState: FirstFetchState = .idle
+    var state = State.initializing
+    
+//    enum FirstFetchState {
+//        case pending, fetched, idle
+//    }
+//
+//    var firstFetchState: FirstFetchState = .idle
     
     public var initialFetched: Bool {
-        firstFetchState == .fetched
+        state.rawValue >= State.idle.rawValue
     }
     
     @ObservationIgnored
@@ -147,25 +153,25 @@ public class CAFetcher<Item: CAItem>  {
 
 private extension CAFetcher {
     private func setupImpl() async throws(CAError) {
-        guard firstFetchState == .idle else {
+        guard state == .initializing else {
             return
         }
         
-        firstFetchState = .pending
+        state = .loadingFirst
         
         try await loadRequest(all: false)
         
         // ensure the items are loaded
         if !fetchedItems.isEmpty {
-            firstFetchState = .fetched
+            state = .idle
         }
         
         try await load(reset: true)
         
         try await loadRequest(all: true)
         
-        if firstFetchState != .fetched {
-            firstFetchState = .fetched
+        if state != .idle {
+            state = .idle
         }
     }
     
@@ -188,19 +194,36 @@ private extension CAFetcher {
             return
         }
         
-        switch fetchType {
-        case .fetchAll(viewId: let viewId, let allPages):
-            if reset {
-                pageInfo = nil
+        // if we are not in idle state, we should not load again
+        guard state == .idle else {
+            assertionFailure()
+            return
+        }
+        
+        state = .loading
+        
+        do {
+            switch fetchType {
+            case .fetchAll(viewId: let viewId, let allPages):
+                if reset {
+                    pageInfo = nil
+                }
+                try await fetch(viewId: viewId, allPages: allPages)
+            case .fetchOne:
+                try await fetch(viewId: nil)
             }
-            try await fetch(viewId: viewId, allPages: allPages)
-        case .fetchOne:
-            try await fetch(viewId: nil)
+            
+            state = .idle
+        } catch {
+            state = .idle
+            
+            throw error
         }
     }
     
     private func fetch(viewId: String?, allPages: Bool = false) async throws(CAError) {
         let isFetchOne = viewId == nil
+        let isFirstFetch = pageInfo == nil
          
         let newItems = try await CAFetchError.catch { @Sendable in
             try await fetchItems(fetchAll: allPages)
@@ -208,7 +231,7 @@ private extension CAFetcher {
             CAError.fetchFailed($0)
         }
         
-        let finalItems: [Item] = if pageInfo == nil || isFetchOne {
+        let finalItems: [Item] = if isFirstFetch || isFetchOne {
             newItems
         } else {
             fetchedItems + newItems
@@ -235,8 +258,15 @@ private extension CAFetcher {
                     )
                 }
                 
+                let items = finalItems.map { $0.toCacheItem(state: .normal) }
+                
+                assert(
+                    items.count == Set(items.map(\.id)).count,
+                    "There are duplicate items in the fetched items",
+                )
+                
                 try StoredCacheItem
-                    .insert(or: .replace, finalItems.map { $0.toCacheItem(state: .normal) })
+                    .insert(or: .replace, items)
                     .execute(db)
                 
                 if let viewId {
@@ -285,6 +315,11 @@ private extension CAFetcher {
                 throw CAFetchError.maxPageReached
             }
         }
+        
+        assert(
+            finalItems.count == Set(finalItems.map(\.idString)).count,
+            "There are duplicate items in the fetched items",
+        )
         
         return finalItems
     }
