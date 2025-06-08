@@ -8,7 +8,7 @@
 import SharingGRDB
 
 public enum CAFetchType: Hashable, Sendable {
-    case fetchOne, fetchAll(viewId: String)
+    case fetchOne(itemId: String), fetchAll(viewId: String)
 }
 
 struct ItemRequest<Item: CAItem>: FetchKeyRequest {
@@ -18,9 +18,10 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
     
     public func fetch(_ db: Database) throws -> Value {
         switch fetchType {
-        case .fetchOne:
+        case .fetchOne(let id):
             guard let item = (try StoredCacheItem
                 .where { $0.type_name == Item.typeName }
+                .where { $0.id == id }
                 .fetchOne(db)) else {
                     return []
                 }

@@ -55,6 +55,27 @@ public class CAFetcher<Item: CAItem>  {
     @ObservationIgnored
     @Fetch(ItemRequest<Item>()) var fetchedItems = []
     
+    public var itemPublisher: AnyPublisher<Item, Never> {
+        $fetchedItems
+            .publisher
+            .map { $0.first ?? .init() }
+            .eraseToAnyPublisher()
+    }
+    
+    public var itemsPublisher: AnyPublisher<[Item], Never> {
+        $fetchedItems
+            .publisher
+            .eraseToAnyPublisher()
+    }
+    
+    public var asyncItem: AsyncPublisher<some Publisher<Item, Never>> {
+        itemPublisher.values
+    }
+    
+    public var asyncItems: AsyncPublisher<some Publisher<Array<Item>, Never>> {
+        itemsPublisher.values
+    }
+    
     @ObservationIgnored
     var cancellables = Set<AnyCancellable>()
     
@@ -85,6 +106,14 @@ public class CAFetcher<Item: CAItem>  {
                 self?.handleEvent(event)
             }
             .store(in: &cancellables)
+    }
+    
+    public func loadItemWithoutCache() async throws -> Item? {
+        try await loadItemsWithoutCache().first
+    }
+    
+    public func loadItemsWithoutCache() async throws -> [Item] {
+        try await Item.fetch(params: params).0
     }
     
     public func setup() async throws(CAError) {
@@ -119,7 +148,6 @@ public class CAFetcher<Item: CAItem>  {
 private extension CAFetcher {
     private func setupImpl() async throws(CAError) {
         guard firstFetchState == .idle else {
-            assertionFailure("setup should only be called once")
             return
         }
         
@@ -155,19 +183,16 @@ private extension CAFetcher {
             return
         }
         
-        if reset {
-            pageInfo = nil
-        }
-        
-        params = params.setEndCursor(pageInfo?.endCursor)
-        
         switch fetchType {
         case .fetchAll(viewId: let viewId):
+            if reset {
+                pageInfo = nil
+            }
+            params = params.setEndCursor(pageInfo?.endCursor)
             try await fetch(viewId: viewId)
         case .fetchOne:
             try await fetch(viewId: nil)
         }
-    
     }
     
     private func fetch(viewId: String?) async throws(CAError) {
