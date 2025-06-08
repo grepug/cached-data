@@ -42,16 +42,7 @@ public enum CAInsertAction: Sendable {
 @MainActor
 public class DataMutation: CAMutation {
     @Dependency(\.defaultDatabase) var db
-    
-    private func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws {
-        try await db.write { db in
-            try StoredCacheItem.where {
-                $0.id == item.idString
-            }
-            .update { $0.state = state.rawValue }
-            .execute(db)
-        }
-    }
+    @Dependency(\.caLogger) var logger
     
     public func delete<Item: CAMutableItem>(_ item: Item) async throws {
         // first set the item in the cache that is being deleted
@@ -129,5 +120,17 @@ public class DataMutation: CAMutation {
         }
         
         try await item.insert()
+    }
+}
+
+extension DataMutation {
+    private func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws {
+        try await db.write { db in
+            try StoredCacheItem.where {
+                $0.id == item.idString
+            }
+            .update { $0.state = state.rawValue }
+            .execute(db)
+        }
     }
 }

@@ -10,7 +10,7 @@ import ErrorKit
 import SharingGRDB
 import Combine
 
-struct CaCacheUpdateEvent {
+struct CACacheUpdateEvent {
     enum Kind {
         case reloadAfterInsertion
     }
@@ -21,7 +21,7 @@ struct CaCacheUpdateEvent {
 }
 
 @MainActor
-let caCacheUpdatedSubject = PassthroughSubject<CaCacheUpdateEvent, Never>()
+let caCacheUpdatedSubject = PassthroughSubject<CACacheUpdateEvent, Never>()
 
 @Observable
 @MainActor
@@ -48,6 +48,9 @@ public class CAFetcher<Item: CAItem>  {
     
     @ObservationIgnored
     @Dependency(\.defaultDatabase) var database
+    
+    @ObservationIgnored
+    @Dependency(\.caLogger) var logger
     
     @ObservationIgnored
     @Fetch(ItemRequest<Item>()) var fetchedItems = []
@@ -80,16 +83,37 @@ public class CAFetcher<Item: CAItem>  {
             .store(in: &cancellables)
     }
     
-    private func handleEvent(_ event: CaCacheUpdateEvent) {
-        switch event.kind {
-        case .reloadAfterInsertion:
-            Task {
-                try await load(reset: true)
-            }
+    public func setup() async throws(CAError) {
+        do {
+            try await setupImpl()
+        } catch {
+            logger.error(ErrorKit.userFriendlyMessage(for: error), [
+                "trace": "\(ErrorKit.errorChainDescription(for: error))"
+            ])
         }
     }
     
-    public func setup() async throws(CAError) {
+    public func reload() async throws(CAError) {
+        do {
+            try await load(reset: true)
+        } catch {
+            logger.error(error)
+            throw error
+        }
+    }
+    
+    public func loadNextIfAny() async throws(CAError) {
+        do {
+            try await loadNextIfAnyImpl()
+        } catch {
+            logger.error(error)
+            throw error
+        }
+    }
+}
+
+private extension CAFetcher {
+    private func setupImpl() async throws(CAError) {
         guard firstFetchState == .idle else {
             assertionFailure("setup should only be called once")
             return
@@ -113,11 +137,7 @@ public class CAFetcher<Item: CAItem>  {
         }
     }
     
-    public func reload() async throws(CAError) {
-        try await load(reset: true)
-    }
-    
-    public func loadNextIfAny() async throws(CAError) {
+    private func loadNextIfAnyImpl() async throws(CAError) {
         guard hasNext else {
             assertionFailure("loadNextIfAny should not be called when there is no next page")
             throw .fetchFailed(.noMoreNextPage)
@@ -179,6 +199,15 @@ public class CAFetcher<Item: CAItem>  {
                 try StoredCacheItemMap
                     .insert(or: .fail, maps)
                     .execute(db)
+            }
+        }
+    }
+    
+    func handleEvent(_ event: CACacheUpdateEvent) {
+        switch event.kind {
+        case .reloadAfterInsertion:
+            Task {
+                try await load(reset: true)
             }
         }
     }
