@@ -32,9 +32,9 @@ public protocol CAItem: Codable, Sendable, Identifiable {
 }
 
 public protocol CAMutableItem: CAItem {
-    func update() async throws
+    func update() async throws(CAMutationError)
     
-    func insert() async throws
+    func insert() async throws(CAMutationError)
     
-    func delete() async throws
+    func delete() async throws(CAMutationError)
 }

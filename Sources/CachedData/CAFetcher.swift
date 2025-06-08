@@ -10,7 +10,6 @@ import ErrorKit
 import SharingGRDB
 import Combine
 
-
 struct CaCacheUpdateEvent {
     enum Kind {
         case reloadAfterInsertion
@@ -33,6 +32,16 @@ public class CAFetcher<Item: CAItem>  {
     var params: Params
     
     var pageInfo: PageInfo?
+    
+    enum FirstFetchState {
+        case pending, fetched, idle
+    }
+    
+    var firstFetchState: FirstFetchState = .idle
+    
+    public var initialFetched: Bool {
+        firstFetchState == .fetched
+    }
     
     @ObservationIgnored
     let viewId: String
@@ -62,10 +71,7 @@ public class CAFetcher<Item: CAItem>  {
         self.viewId = viewId
         self.params = params
         
-        Task {
-            try await loadCache()
-        }
-        
+        // ⚠️ FIXME: it possibly cause a self retain cycle
         caCacheUpdatedSubject
             .filter { $0.itemTypeName == Item.typeName }
             .sink { [weak self] event in
@@ -83,15 +89,44 @@ public class CAFetcher<Item: CAItem>  {
         }
     }
     
-    private func loadCache() async throws {
-        try await $fetchedItems.load(ItemRequest(viewId: viewId), animation: .default)
+    public func setup() async throws(CAError) {
+        guard firstFetchState == .idle else {
+            assertionFailure("setup should only be called once")
+            return
+        }
+        
+        firstFetchState = .pending
+        
+        try await CAError.catch { @Sendable in
+            try await $fetchedItems.load(ItemRequest(viewId: viewId), animation: .default)
+        }
+        
+        // ensure the items are loaded
+        if !fetchedItems.isEmpty {
+            firstFetchState = .fetched
+        }
+        
+        try await load(reset: true)
+        
+        if firstFetchState != .fetched {
+            firstFetchState = .fetched
+        }
     }
     
-    public func load(reset: Bool = false) async throws {
-        try await loadImpl(reset: reset)
+    public func reload() async throws(CAError) {
+        try await load(reset: true)
     }
     
-    func loadImpl(reset: Bool) async throws {
+    public func loadNextIfAny() async throws(CAError) {
+        guard hasNext else {
+            assertionFailure("loadNextIfAny should not be called when there is no next page")
+            throw .fetchFailed(.noMoreNextPage)
+        }
+        
+        try await load(reset: false)
+    }
+    
+    private func load(reset: Bool) async throws(CAError) {
         guard reset || hasNext else {
             return
         }
@@ -100,26 +135,29 @@ public class CAFetcher<Item: CAItem>  {
             pageInfo = nil
         }
         
-        let viewId = viewId
-        
         params = params.setEndCursor(pageInfo?.endCursor)
         
-        let (newItems, newPageInfo) = try await Item.fetch(params: params)
+        let viewId = viewId
         
-        let finalItems: [Item]
+        let (newItems, newPageInfo) = try await CAFetchError.catch { @Sendable in
+            try await Item.fetch(params: params)
+        } mapTo: {
+            CAError.fetchFailed($0)
+        }
         
-        if pageInfo == nil {
-            finalItems = newItems
+        let finalItems: [Item] = if pageInfo == nil {
+            newItems
         } else {
-            finalItems = fetchedItems + newItems
+            fetchedItems + newItems
         }
         
         pageInfo = newPageInfo
-        
-        try await database.write { db in
-            // delete all maps
             
-            try db.execute(sql:
+        try await CAError.catch { @Sendable in
+            try await database.write { db in
+                // delete all maps
+                
+                try db.execute(sql:
                 """
                 DELETE FROM "storedCacheItemMaps"
                 WHERE "view_id" = '\(viewId)'
@@ -128,19 +166,20 @@ public class CAFetcher<Item: CAItem>  {
                     WHERE "type_name" = '\(Item.typeName)'
                   );                
                 """
-            )
-            
-            try StoredCacheItem
-                .insert(or: .replace, finalItems.map { $0.toCacheItem(state: .normal) })
-                .execute(db)
-            
-            let maps = finalItems.enumerated().map { index, item in
-                StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: index)
+                )
+                
+                try StoredCacheItem
+                    .insert(or: .replace, finalItems.map { $0.toCacheItem(state: .normal) })
+                    .execute(db)
+                
+                let maps = finalItems.enumerated().map { index, item in
+                    StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: index)
+                }
+                
+                try StoredCacheItemMap
+                    .insert(or: .fail, maps)
+                    .execute(db)
             }
-            
-            try StoredCacheItemMap
-                .insert(or: .fail, maps)
-                .execute(db)
         }
     }
 }
