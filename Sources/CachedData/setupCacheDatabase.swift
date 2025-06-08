@@ -9,15 +9,10 @@ import Foundation
 import SharingGRDB
 
 extension DatabaseWriter where Self == DatabaseQueue {
-    static var observableModelDatabase: Self {
-        let path = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: "group.visionapp.context")!
-            .appending(path: "contextModel.sqlite")
-            .path()
-        
+    static func observableModelDatabase(path: String) -> Self {
         let databaseQueue = try! DatabaseQueue(path: path)
         
-        print("path!!!", databaseQueue.path)
+        print("CachedData database path", databaseQueue.path)
         
         var migrator = DatabaseMigrator()
         
@@ -39,6 +34,7 @@ extension DatabaseWriter where Self == DatabaseQueue {
                 """
                 CREATE TABLE "storedCacheItemMaps" (
                   "id" TEXT PRIMARY KEY NOT NULL,
+                  "view_id" TEXT NOT NULL,
                   "item_id" TEXT NOT NULL,
                   "order" INTEGER NOT NULL
                 );
@@ -51,6 +47,6 @@ extension DatabaseWriter where Self == DatabaseQueue {
     }
 }
 
-public func setupCacheDatabase() {
-    prepareDependencies { $0.defaultDatabase = .observableModelDatabase }
+public func setupCacheDatabase(path: String) {
+    prepareDependencies { $0.defaultDatabase = .observableModelDatabase(path: path) }
 }

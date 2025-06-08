@@ -7,8 +7,12 @@
 
 import ErrorKit
 
-public enum DataFetcherError: Catching, Throwable {
-    case noData, graphQLError([String]), caught(Error)
+public enum CAError: Catching, Throwable {
+    case noData
+    case graphQLError([String])
+    case mutationFailed
+    case mutationNoAffectedRows
+    case caught(Error)
     
     public var userFriendlyMessage: String {
         switch self {
@@ -16,6 +20,10 @@ public enum DataFetcherError: Catching, Throwable {
             "没有获取到数据"
         case .graphQLError(let message):
             "GraphQL 错误: \(message)"
+        case .mutationFailed:
+            ""
+        case .mutationNoAffectedRows:
+            ""
         case .caught(let error):
             error.localizedDescription
         }

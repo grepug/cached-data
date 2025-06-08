@@ -7,7 +7,7 @@
 
 import SharingGRDB
 
-struct ItemRequest<Item: DataFetcherItem>: FetchKeyRequest {
+struct ItemRequest<Item: CAItem>: FetchKeyRequest {
     var viewId: String?
     
     public typealias Value = [Item]
@@ -17,12 +17,15 @@ struct ItemRequest<Item: DataFetcherItem>: FetchKeyRequest {
             return []
         }
         
-        return try StoredCacheItem
+        let items = try StoredCacheItem
             .join(StoredCacheItemMap.all) { $0.id.eq($1.item_id) }
-            .where { $1.id == viewId }
+            .where { a, _ in a.type_name == Item.typeName }
+            .where { $1.view_id == viewId }
             .order { $1.order }
             .fetchAll(db)
-            .map { $0.0 }
-            .map { .init(fromCache: $0) }
+     
+        return items.map { item, map in
+                .init(fromCacheJSONString: item.json_string, state: item.caState)
+        }
     }
 }

@@ -8,21 +8,9 @@
 import SharingGRDB
 import Foundation
 
-//public enum ItemState: Sendable {
-//    case normal, mutating, deleting
-//}
-//
-//@dynamicMemberLookup
-//public struct ItemWrapper<Item: DataFetcherItem>: Sendable, Identifiable {
-//    let value: Item
-//    public var id: Item.ID { value.id }
-//    
-//    var state: ItemState = .normal
-//    
-//    subscript<T>(dynamicMember keyPath: KeyPath<Item, T>) -> T {
-//         value[keyPath: keyPath]
-//     }
-//}
+public enum CAItemState: Int, Sendable {
+    case normal, updating, inserting, deleting
+}
 
 @Table
 public struct StoredCacheItem: Identifiable {
@@ -30,16 +18,32 @@ public struct StoredCacheItem: Identifiable {
     var type_name: String
     var created_at: Date
     var json_string: String
-    
-    // 0: normal
-    // 1: being deleted
-    // 2: being updating or inserting
     var state: Int
+    
+    var caState: CAItemState {
+        .init(rawValue: state) ?? .normal
+    }
+    
+    public init(id: String, type_name: String, created_at: Date, json_string: String, state: CAItemState = .normal) {
+        self.id = id
+        self.type_name = type_name
+        self.created_at = created_at
+        self.json_string = json_string
+        self.state = state.rawValue
+    }
 }
 
 @Table
 struct StoredCacheItemMap {
-    let id: String
+    private let id: String
+    let view_id: String
     let item_id: StoredCacheItem.ID
     let order: Int
+    
+    init(id: String = UUID().uuidString.lowercased(), view_id: String, item_id: StoredCacheItem.ID, order: Int) {
+        self.id = id
+        self.view_id = view_id
+        self.item_id = item_id
+        self.order = order
+    }
 }
