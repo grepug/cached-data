@@ -45,6 +45,36 @@ public class DataMutation: CAMutation {
     @Dependency(\.caLogger) var logger
     
     public func delete<Item: CAMutableItem>(_ item: Item) async throws {
+        do {
+            try await deleteImpl(item)
+        } catch {
+            logger.error(error)
+            throw error
+        }
+    }
+    
+    public func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws {
+        do {
+            try await updateImpl(item, viewId: viewId, action: action)
+        } catch {
+            logger.error(error)
+            throw error
+        }
+    }
+    
+    public func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws {
+        do {
+            try await insertImpl(item, viewId: viewId, action: action)
+        } catch {
+            logger.error(error)
+            throw error
+        }
+    }
+}
+
+// MARK: - Private Implementation
+private extension DataMutation {
+    func deleteImpl<Item: CAMutableItem>(_ item: Item) async throws {
         // first set the item in the cache that is being deleted
         try await changeState(item, state: .deleting)
         
@@ -53,84 +83,99 @@ public class DataMutation: CAMutation {
             try await item.delete()
             
             // delete for good
-            try! await db.write { db in
-                try StoredCacheItem.where {
-                    $0.id == item.idString
+            try await CAMutationError.catch { @Sendable in
+                try await db.write { db in
+                    try StoredCacheItem.where {
+                        $0.id == item.idString
+                    }
+                    .delete()
+                    .execute(db)
                 }
-                .delete()
-                .execute(db)
+            } mapTo: {
+                CAError.mutationFailed($0)
             }
         } catch {
             // roll back if deletion fails
             try await changeState(item, state: .normal)
+            throw error
         }
     }
     
-    public func update<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws {
-        try await db.write { db in
-            try StoredCacheItem.where {
-                $0.id == item.idString
-            }
-            .update(set: { a in
-                a.json_string = item.toCacheItem(state: .normal).json_string
-            })
-            .execute(db)
-            
-            // used when updating relation
-            if case .deleteCacheForView = action {
-                try StoredCacheItemMap
-                    .where { $0.view_id == viewId }
-                    .and(.where { $0.item_id == item.idString })
-                .delete()
+    func updateImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAUpdateAction) async throws {
+        try await CAMutationError.catch { @Sendable in
+            try await db.write { db in
+                try StoredCacheItem.where {
+                    $0.id == item.idString
+                }
+                .update(set: { a in
+                    a.json_string = item.toCacheItem(state: .normal).json_string
+                })
                 .execute(db)
+                
+                // used when updating relation
+                if case .deleteCacheForView = action {
+                    try StoredCacheItemMap
+                        .where { $0.view_id == viewId }
+                        .and(.where { $0.item_id == item.idString })
+                    .delete()
+                    .execute(db)
+                }
             }
+        } mapTo: {
+            CAError.mutationFailed($0)
         }
         
         try await item.update()
     }
     
-    public func insert<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws {
-        try await db.write { db in
-            let cacheItem = item.toCacheItem(state: .inserting)
-            
-            try StoredCacheItem
-                .insert(cacheItem)
-                .execute(db)
-            
-            switch action {
-            case .prepend:
-                let smallestOrder = try StoredCacheItemMap
-                    .where { $0.view_id == viewId }
-                    .join(StoredCacheItem.where { $0.type_name == Item.typeName }) { $0.item_id.eq($1.id) }
-                    .limit(1)
-                    .order(by: \.order)
-                    .fetchOne(db)
-                    .map { $0.0 }?
-                    .order ?? 0
+    func insertImpl<Item: CAMutableItem>(_ item: Item, viewId: String, action: CAInsertAction) async throws {
+        try await CAMutationError.catch { @Sendable in
+            try await db.write { db in
+                let cacheItem = item.toCacheItem(state: .inserting)
                 
-                let newOrder = smallestOrder - 1
-                let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: newOrder)
-                
-                try StoredCacheItemMap
-                    .insert(map)
+                try StoredCacheItem
+                    .insert(cacheItem)
                     .execute(db)
-            default:
-                fatalError("unimplemented!")
+                
+                switch action {
+                case .prepend:
+                    let smallestOrder = try StoredCacheItemMap
+                        .where { $0.view_id == viewId }
+                        .join(StoredCacheItem.where { $0.type_name == Item.typeName }) { $0.item_id.eq($1.id) }
+                        .limit(1)
+                        .order(by: \.order)
+                        .fetchOne(db)
+                        .map { $0.0 }?
+                        .order ?? 0
+                    
+                    let newOrder = smallestOrder - 1
+                    let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: newOrder)
+                    
+                    try StoredCacheItemMap
+                        .insert(map)
+                        .execute(db)
+                default:
+                    fatalError("unimplemented!")
+                }
             }
+        } mapTo: {
+            CAError.mutationFailed($0)
         }
         
         try await item.insert()
     }
-}
-
-extension DataMutation {
-    private func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws {
-        try await db.write { db in
-            try StoredCacheItem.where {
-                $0.id == item.idString
+    
+    func changeState<Item: CAItem>(_ item: Item, state: CAItemState) async throws {
+        try await CAMutationError.catch { @Sendable in
+            try await db.write { db in
+                try StoredCacheItem.where {
+                    $0.id == item.idString
+                }
+                .update { $0.state = state.rawValue }
+                .execute(db)
             }
-            .update { $0.state = state.rawValue }
-            .execute(db)
+        } mapTo: {
+            CAError.mutationFailed($0)
         }
     }
 }
