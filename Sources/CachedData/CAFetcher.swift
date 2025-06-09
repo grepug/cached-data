@@ -39,12 +39,6 @@ public class CAFetcher<Item: CAItem>  {
     
     var state = State.initializing
     
-//    enum FirstFetchState {
-//        case pending, fetched, idle
-//    }
-//
-//    var firstFetchState: FirstFetchState = .idle
-    
     public var initialFetched: Bool {
         state.rawValue >= State.idle.rawValue
     }
@@ -193,11 +187,6 @@ private extension CAFetcher {
             return
         }
         
-//        if case .fetchAll(_, let allPages) = fetchType, allPages {
-//            assertionFailure()
-//            return
-//        }
-        
         // if we are not in idle state, we should not load again
         guard state == .idle else {
             return
@@ -210,7 +199,9 @@ private extension CAFetcher {
             case .fetchAll(viewId: let viewId, let allPages):
                 if reset {
                     pageInfo = nil
+                    params = params.setEndCursor(nil)
                 }
+                
                 try await fetch(viewId: viewId, allPages: allPages)
             case .fetchOne:
                 try await fetch(viewId: nil)
