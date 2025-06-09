@@ -42,7 +42,31 @@ extension DatabaseWriter where Self == DatabaseQueue {
             )
             .execute(db)
         }
+        
+        migrator.registerMigration("Create unique index on storedCacheItemMaps") { db in
+            try #sql(
+                """
+                CREATE UNIQUE INDEX unique_view_item ON "storedCacheItemMaps" ("view_id", "item_id");
+                """
+            ).execute(db)
+        }
+        
+        migrator.registerMigration("Create indexes on type_name and view_id") { db in
+            try #sql(
+                """
+                CREATE INDEX index_storedCacheItems_type_name ON storedCacheItems (type_name);
+                """
+            ).execute(db)
+            
+            try #sql(
+                """
+                CREATE INDEX index_storedCacheItemMaps_view_id ON storedCacheItemMaps (view_id);
+                """
+            ).execute(db)
+        }
+        
         try! migrator.migrate(databaseQueue)
+        
         return databaseQueue
     }
 }

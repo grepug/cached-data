@@ -278,7 +278,7 @@ private extension CAFetcher {
                     }
                     
                     try StoredCacheItemMap
-                        .insert(or: .fail, maps)
+                        .insert(or: .replace, maps)
                         .execute(db)
                 }
             }
