@@ -64,7 +64,7 @@ public class CAFetcher<Item: CAItem>  {
     public var itemPublisher: AnyPublisher<Item, Never> {
         $fetchedItems
             .publisher
-            .map { $0.first ?? .init() }
+            .compactMap { $0.first }
             .eraseToAnyPublisher()
     }
     
@@ -112,6 +112,10 @@ public class CAFetcher<Item: CAItem>  {
                 self?.handleEvent(event)
             }
             .store(in: &cancellables)
+    }
+    
+    deinit {
+        print("deinit CAFetcher for \(Item.typeName)")
     }
     
     public func loadItemWithoutCache() async throws -> Item? {
@@ -162,9 +166,9 @@ private extension CAFetcher {
         try await loadRequest(all: false)
         
         // ensure the items are loaded
-        if !fetchedItems.isEmpty {
+//        if !fetchedItems.isEmpty {
             state = .idle
-        }
+//        }
         
         try await load(reset: true)
         
@@ -189,14 +193,13 @@ private extension CAFetcher {
             return
         }
         
-        if case .fetchAll(_, allPages: let allPages) = fetchType, allPages {
-            assertionFailure()
-            return
-        }
+//        if case .fetchAll(_, let allPages) = fetchType, allPages {
+//            assertionFailure()
+//            return
+//        }
         
         // if we are not in idle state, we should not load again
         guard state == .idle else {
-            assertionFailure()
             return
         }
         
