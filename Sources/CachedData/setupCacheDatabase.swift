@@ -1,5 +1,5 @@
 //
-//  a.swift
+//  setupCacheDatabase.swift
 //  cached-data
 //
 //  Created by Kai Shao on 2025/6/5.
@@ -36,22 +36,18 @@ extension DatabaseWriter where Self == DatabaseQueue {
                   "id" TEXT PRIMARY KEY NOT NULL,
                   "view_id" TEXT NOT NULL,
                   "item_id" TEXT NOT NULL,
-                  "order" INTEGER NOT NULL
+                  "order" REAL NOT NULL
                 );
                 """
             )
             .execute(db)
-        }
-        
-        migrator.registerMigration("Create unique index on storedCacheItemMaps") { db in
+
             try #sql(
                 """
                 CREATE UNIQUE INDEX unique_view_item ON "storedCacheItemMaps" ("view_id", "item_id");
                 """
             ).execute(db)
-        }
-        
-        migrator.registerMigration("Create indexes on type_name and view_id") { db in
+
             try #sql(
                 """
                 CREATE INDEX index_storedCacheItems_type_name ON storedCacheItems (type_name);

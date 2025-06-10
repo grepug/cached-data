@@ -38,9 +38,9 @@ struct StoredCacheItemMap {
     private let id: String
     let view_id: String
     let item_id: StoredCacheItem.ID
-    let order: Int
+    let order: Double
     
-    init(id: String = UUID().uuidString.lowercased(), view_id: String, item_id: StoredCacheItem.ID, order: Int) {
+    init(id: String = UUID().uuidString.lowercased(), view_id: String, item_id: StoredCacheItem.ID, order: Double) {
         self.id = id
         self.view_id = view_id
         self.item_id = item_id

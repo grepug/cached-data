@@ -265,7 +265,7 @@ private extension CAFetcher {
                 
                 if let viewId {
                     let maps = finalItems.enumerated().map { index, item in
-                        StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: index)
+                        StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: Double(index))
                     }
                     
                     try StoredCacheItemMap
