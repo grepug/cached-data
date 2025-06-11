@@ -13,7 +13,7 @@ public enum CAItemState: Int, Sendable {
 }
 
 @Table
-public struct StoredCacheItem: Identifiable {
+public struct StoredCacheItem: Identifiable, Sendable {
     public var id: String
     var type_name: String
     var created_at: Date
@@ -34,7 +34,7 @@ public struct StoredCacheItem: Identifiable {
 }
 
 @Table
-struct StoredCacheItemMap {
+struct StoredCacheItemMap: Sendable {
     private let id: String
     let view_id: String
     let item_id: StoredCacheItem.ID

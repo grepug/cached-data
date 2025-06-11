@@ -1,0 +1,246 @@
+//
+//  CAMutationViewAction.swift
+//  cached-data
+//
+//  Created by Kai Shao on 2025/6/10.
+//
+
+import Foundation
+import SharingGRDB
+
+public protocol CAMutationViewAction: Sendable {
+    associatedtype Kind: Sendable
+    associatedtype Cache: Sendable = ()
+    
+    var viewId: String { get }
+    var kind: Kind { get }
+    
+    static var noAction: Self { get }
+    
+    func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws
+    func cacheAfterMutation(item: any CAMutableItem) async throws
+    func cacheRollback(item: any CAMutableItem, cache: inout Cache) async throws
+}
+
+public struct CAInsertViewAction: CAMutationViewAction {
+    public enum Kind: Sendable {
+        case prepend
+        case append
+        case insertBefore(id: String)
+        case insertAfter(id: String)
+        case noAction
+    }
+    
+    public let viewId: String
+    public let kind: Kind
+    
+    @Dependency(\.caLogger) var logger
+    @Dependency(\.defaultDatabase) var db
+    
+    public init(viewId: String, kind: Kind) {
+        self.viewId = viewId
+        self.kind = kind
+    }
+    
+    public static var noAction: CAInsertViewAction {
+        self.init(viewId: "", kind: .noAction)
+    }
+
+    public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
+        try await db.write { db in
+            try handleBeforeInsertion(db: db, item: item)
+        }
+    }
+    
+    public func cacheAfterMutation(item: any CAMutableItem) async throws {
+        try await db.write { db in
+            try handleAfterInsertion(db: db, item: item)
+        }
+    }
+    
+    public func cacheRollback(item: any CAMutableItem, cache: inout Cache) async throws {
+        try await db.write { db in
+            try handleRollbackInsertion(db: db, item: item)
+        }
+    }
+}
+
+public struct CAUpdateViewAction: CAMutationViewAction {
+    public enum Kind: Sendable {
+        case deleteCacheForView
+        case noAction
+    }
+    
+    public struct Cache: Sendable {
+        var oldItem: StoredCacheItem?
+    }
+    
+    
+    public let viewId: String
+    public let kind: Kind
+    
+    @Dependency(\.caLogger) var logger
+    @Dependency(\.defaultDatabase) var db
+    
+    public init(viewId: String, kind: Kind) {
+        self.viewId = viewId
+        self.kind = kind
+    }
+    
+    public static var noAction: CAUpdateViewAction {
+        self.init(viewId: "", kind: .noAction)
+    }
+    
+    public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
+        try await db.write { db in
+            try handleBeforeUpdating(db: db, item: item)
+        }
+    }
+    
+    public func cacheAfterMutation(item: any CAMutableItem) async throws {
+        try await db.write { db in
+            try handleAfterUpdating(db: db, item: item)
+        }
+    }
+    
+    public func cacheRollback(item: any CAMutableItem, cache: inout Cache) async throws {
+        let cache = cache
+        
+        try await db.write { db in
+            try handleRollbackUpdating(db: db, item: item, cache: cache)
+        }
+    }
+}
+
+// MARK: - Inserting Hanlders
+
+private extension CAInsertViewAction {
+    func handleBeforeInsertion(db: Database, item: any CAMutableItem) throws {
+        let typeName = type(of: item).typeName
+        let order: Double
+        
+        switch kind {
+        case .prepend:
+            logger.info("Handling prepend action")
+            
+            order = (try StoredCacheItemMap
+                .where { $0.view_id == viewId }
+                .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+                .limit(1)
+                .order(by: \.order)
+                .fetchOne(db)
+                .map { $0.0 }?
+                .order ?? 0) - 1
+//            order = (try StoredCacheItemMap
+//                .where { $0.view_id == viewId }
+//                .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+//                .limit(1)
+//                .order { $0.order.desc() }
+//                .fetchOne(db)
+//                .map { $0.0 }?
+//                .order ?? 0) + 1
+            let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: order)
+            
+            try StoredCacheItemMap
+                .insert(map)
+                .execute(db)
+            
+            logger.info("Inserted map into StoredCacheItemMap table")
+        case .noAction:
+            break
+        default:
+            logger.error("Unsupported action kind: \(kind)")
+            fatalError("unimplemented!")
+        }
+        
+    }
+    
+    func handleAfterInsertion(db: Database, item: any CAMutableItem) throws {
+        logger.info("Handling after prepend action")
+        try changeState(item, state: .normal, db: db)
+    }
+    
+    func handleRollbackInsertion(db: Database, item: any CAMutableItem) throws {
+        let typeName = type(of: item).typeName
+        
+        switch kind {
+        case .prepend, .append, .insertAfter, .insertBefore:
+            logger.info("Handling rollback for prepend action")
+            
+            try StoredCacheItem
+                .where { $0.id == item.idString }
+                .delete()
+                .execute(db)
+            
+            try StoredCacheItemMap
+                .where { $0.view_id == viewId && $0.item_id == item.idString }
+                .delete()
+                .execute(db)
+            
+            logger.info("Deleted cache item and map for view \(viewId)")
+        case .noAction:
+            break
+        }
+    }
+}
+
+private extension CAUpdateViewAction {
+    func handleBeforeUpdating(db: Database, item: any CAMutableItem) throws {
+        let typeName = type(of: item).typeName
+        
+        switch kind {
+            // in case of moving item from one view to another, it means the item no longer belongs to the current view
+        case .deleteCacheForView:
+            logger.info("Handling delete cache for view action")
+                
+            try changeState(item, state: .updating, db: db)
+            
+            logger.info("Deleted cache item and map for view \(viewId)")
+        case .noAction:
+            break
+        }
+    }
+    
+    func handleAfterUpdating(db: Database, item: any CAMutableItem) throws {
+        switch kind {
+        case .deleteCacheForView:
+            try changeState(item, state: .normal, db: db)
+            
+            try StoredCacheItemMap
+                .where { $0.view_id == viewId && $0.item_id == item.idString }
+                .delete()
+                .execute(db)
+        case .noAction:
+            break
+        }
+    }
+    
+    func handleRollbackUpdating(db: Database, item: any CAMutableItem, cache: Cache) throws {
+        guard let oldItem = cache.oldItem else {
+            logger.error("No old item found for rollback")
+            assertionFailure()
+            return
+        }
+        
+        switch kind {
+        case .deleteCacheForView:
+            try changeState(item, state: .normal, db: db)
+            
+            try StoredCacheItem
+                .update(oldItem)
+                .execute(db)
+        case .noAction:
+            break
+        }
+    }
+}
+
+extension CAMutationViewAction {
+    func changeState<Item: CAItem>(_ item: Item, state: CAItemState, db: Database) throws {
+        try StoredCacheItem.where {
+            $0.id == item.idString
+        }
+        .update { $0.state = state.rawValue }
+        .execute(db)
+    }
+}

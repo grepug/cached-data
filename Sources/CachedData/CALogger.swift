@@ -14,6 +14,14 @@ public protocol CALogger: Sendable {
 }
 
 extension CALogger {
+    func info(_ message: String) {
+        info(message, [:])
+    }
+    
+    func error(_ message: String) {
+        error(message, [:])
+    }
+    
     func error(_ err: Error) {
         error(ErrorKit.userFriendlyMessage(for: err), [
             "trace": "\(ErrorKit.errorChainDescription(for: err))"

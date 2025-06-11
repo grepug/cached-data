@@ -55,12 +55,15 @@ public enum CAFetchError: NotifiableError {
 public enum CAMutationError: NotifiableError {
     case failed
     case noAffectedRows
+    case unauthorized
     case caught(Error)
     
     public var userFriendlyMessage: String {
         switch self {
         case .failed:
             "操作失败，请稍后再试"
+        case .unauthorized:
+            "未登录"
         case .noAffectedRows:
             "没有影响到任何数据，请检查操作是否正确"
         case .caught(let error):
