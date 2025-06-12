@@ -34,6 +34,8 @@ public struct CAInsertViewAction: CAMutationViewAction {
     public let viewId: String
     public let kind: Kind
     
+    public struct Cache: Sendable {}
+    
     @Dependency(\.caLogger) var logger
     @Dependency(\.defaultDatabase) var db
     

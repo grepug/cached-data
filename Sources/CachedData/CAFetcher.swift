@@ -5,7 +5,7 @@
 //  Created by Kai Shao on 2025/6/4.
 //
 
-import SwiftUI
+import Foundation
 import ErrorKit
 import SharingGRDB
 import Combine
@@ -199,7 +199,7 @@ public class CAFetcher<Item: CAItem> {
     /// Fetches items without using the cache
     /// - Returns: Array of fetched items
     public func loadItemsWithoutCache() async throws -> [Item] {
-        try await Item.fetch(params: params).0
+        try await Item.fetch(params: params).items
     }
     
     /// Set up the fetcher and perform initial load
@@ -283,14 +283,14 @@ private extension CAFetcher {
         
         state = .loading
         
+        if reset {
+            pageInfo = nil
+            params = params.setEndCursor(nil)
+        }
+        
         do {
             switch fetchType {
-            case .fetchAll(viewId: let viewId, let allPages):
-                if reset {
-                    pageInfo = nil
-                    params = params.setEndCursor(nil)
-                }
-                
+            case .fetchAll(_, let allPages):
                 try await fetch(allPages: allPages)
             case .fetchOne:
                 try await fetch()
@@ -393,11 +393,11 @@ private extension CAFetcher {
         while (hasNext && fetchAll) || !fetched {
             fetched = true
             
-            let (newItems, newPageInfo) = try await Item.fetch(params: params)
+            let result = try await Item.fetch(params: params)
             
-            finalItems.append(contentsOf: newItems)
+            finalItems.append(contentsOf: result.items)
             
-            pageInfo = newPageInfo
+            pageInfo = result.pageInfo
             params = params.setEndCursor(pageInfo?.endCursor)
             
             maxPage -= 1

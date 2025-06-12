@@ -14,6 +14,20 @@ public protocol CAItemParams: Sendable {
     func setEndCursor(_ cursor: String?) -> Self
 }
 
+public struct CAFetchResult<Item: Sendable, PageInfo: CAItemPageInfo>: Sendable {
+    public let items: [Item]
+    public let pageInfo: PageInfo
+    
+    public var item: Item? {
+        items.first
+    }
+    
+    public init(items: [Item], pageInfo: PageInfo) {
+        self.items = items
+        self.pageInfo = pageInfo
+    }
+}
+
 public protocol CAItem: Codable, Sendable, Identifiable {
     associatedtype PageInfo: CAItemPageInfo
     associatedtype Params: CAItemParams
@@ -30,7 +44,7 @@ public protocol CAItem: Codable, Sendable, Identifiable {
     
     static var typeName: String { get }
     
-    static func fetch(params: Params) async throws -> ([Self], PageInfo)
+    static func fetch(params: Params) async throws -> CAFetchResult<Self, PageInfo>
 }
 
 public protocol CAMutableItem: CAItem {

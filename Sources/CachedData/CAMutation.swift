@@ -57,7 +57,7 @@ public class DataMutation: CAMutation {
         } catch {
             logger.error(error)
             
-            try CAMutationError.catch { @Sendable in
+            try CAMutationError.catch {
                 throw error
             }
         }
@@ -65,7 +65,7 @@ public class DataMutation: CAMutation {
     
     public func insert<Item>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError) where Item : CAMutableItem {
         do {
-            var cache: () = CAInsertViewAction.Cache()
+            var cache = CAInsertViewAction.Cache()
 
             try await action.cacheBeforeMutation(item: item, cache: &cache)
 

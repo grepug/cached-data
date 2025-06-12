@@ -21,7 +21,7 @@ public enum CAFetchError: NotifiableError {
     static let maxPageCount = 100
     
     case noData
-    case graphQLError([String])
+    case serverFailure(String)
     case noMoreNextPage
     case maxPageReached
     case lastPageIsLoading
@@ -30,7 +30,7 @@ public enum CAFetchError: NotifiableError {
     public var userNotable: Bool {
         switch self {
         case .noData: false
-        case .graphQLError: true
+        case .serverFailure: true
         case .noMoreNextPage: false
         case .maxPageReached: true
         case .caught: true
@@ -42,8 +42,8 @@ public enum CAFetchError: NotifiableError {
         switch self {
         case .noData:
             "没有获取到数据"
-        case .graphQLError(let messages):
-            "GraphQL 错误: \(messages.joined(separator: ", "))"
+        case .serverFailure(let message):
+            "服务器错误: \(message)"
         case .noMoreNextPage:
             "没有更多数据可加载"
         case .maxPageReached:
