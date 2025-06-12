@@ -6,12 +6,7 @@
 //
 
 import Combine
-
-@MainActor
-public func reloadCache<Item: CAItem>(_ type: Item.Type, viewId: String? = nil, excludingViewIds: [String] = []) {
-    // Publish a cache reload event to notify subscribers
-    caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))
-}
+import Dependencies
 
 // MARK: - Cache Update Event Definition
 

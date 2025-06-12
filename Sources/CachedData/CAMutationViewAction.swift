@@ -15,8 +15,6 @@ public protocol CAMutationViewAction: Sendable {
     var viewId: String? { get }
     var kind: Kind { get }
     
-//    static var noAction: Self { get }
-    
     func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws
     func cacheAfterMutation(item: any CAMutableItem) async throws
     func cacheRollback(item: any CAMutableItem, cache: inout Cache) async throws

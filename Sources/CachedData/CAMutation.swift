@@ -7,31 +7,17 @@
 
 import SharingGRDB
 
-public protocol CAMutation: Sendable {
-    func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError)
-    func insert<Item: CAMutableItem>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError)
-    func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError)
-}
-
-private enum MutationKey: DependencyKey {
-    static let liveValue: any CAMutation = DataMutation()
-}
-
-public extension DependencyValues {
-    var caMutation: CAMutation {
-        get { self[MutationKey.self] }
-        set { self[MutationKey.self] = newValue }
-    }
-}
-
-public typealias Dep = Dependency
-
 @MainActor
-public class DataMutation: CAMutation {
+struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
     
-    public func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
+    func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String]) {
+        // Publish a cache reload event to notify subscribers
+        caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))
+    }
+    
+    func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
         do {
             try await deleteImpl(item)
         } catch {
@@ -40,7 +26,7 @@ public class DataMutation: CAMutation {
         }
     }
     
-    public func update<Item>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError) where Item : CAMutableItem {
+    func update<Item>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError) where Item : CAMutableItem {
         do {
             try await CAMutationError.catch { @Sendable in
                 var cache = CAUpdateViewAction.Cache()
@@ -62,7 +48,7 @@ public class DataMutation: CAMutation {
         }
     }
     
-    public func insert<Item>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError) where Item : CAMutableItem {
+    func insert<Item>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError) where Item : CAMutableItem {
         do {
             try await CAMutationError.catch { @Sendable in
                 var cache = CAInsertViewAction.Cache()
@@ -86,7 +72,7 @@ public class DataMutation: CAMutation {
 }
 
 // MARK: - Private Implementation
-private extension DataMutation {
+private extension Handlers {
     func deleteImpl<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
         // first set the item in the cache that is being deleted
         try await changeState(item, state: .deleting)

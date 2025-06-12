@@ -1,0 +1,35 @@
+//
+//  CAMutation 2.swift
+//  cached-data
+//
+//  Created by Kai Shao on 2025/6/12.
+//
+
+import Dependencies
+
+public typealias Dep = Dependency
+
+@MainActor
+public protocol CAHandlers: Sendable {
+    func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError)
+    func insert<Item: CAMutableItem>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError)
+    func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError)
+    func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String])
+}
+
+public extension CAHandlers {
+    func reload<Item: CAItem>(forType type: Item.Type, viewId: String? = nil, excludingViewIds: [String] = []) {
+        reload(type, viewId: viewId, excludingViewIds: excludingViewIds)
+    }
+}
+
+private enum MutationKey: DependencyKey {
+    static let liveValue: any CAHandlers = Handlers()
+}
+
+public extension DependencyValues {
+    var caHandlers: CAHandlers {
+        get { self[MutationKey.self] }
+        set { self[MutationKey.self] = newValue }
+    }
+}
