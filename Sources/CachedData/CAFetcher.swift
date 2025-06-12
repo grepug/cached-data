@@ -81,6 +81,14 @@ public class CAFetcher<Item: CAItem> {
     @ObservationIgnored
     let fetchType: CAFetchType
     
+    /// view identifier
+    var viewId: String? {
+        switch fetchType {
+        case .fetchOne: nil
+        case .fetchAll(let viewId, _): viewId
+        }
+    }
+    
     // MARK: - Dependencies & Resources
     
     /// Database access
@@ -195,7 +203,7 @@ public class CAFetcher<Item: CAItem> {
     }
     
     /// Set up the fetcher and perform initial load
-    public func setup() async throws(CAError) {
+    public func setup() async throws(CAFetchError) {
         do {
             try await setupImpl()
         } catch {
@@ -206,7 +214,7 @@ public class CAFetcher<Item: CAItem> {
     }
     
     /// Reload all items
-    public func reload() async throws(CAError) {
+    public func reload() async throws(CAFetchError) {
         do {
             try await load(reset: true)
         } catch {
@@ -216,7 +224,7 @@ public class CAFetcher<Item: CAItem> {
     }
     
     /// Load the next page if available
-    public func loadNextIfAny() async throws(CAError) {
+    public func loadNextIfAny() async throws(CAFetchError) {
         do {
             try await loadNextIfAnyImpl()
         } catch {
@@ -230,7 +238,7 @@ public class CAFetcher<Item: CAItem> {
 
 private extension CAFetcher {
     /// Implementation of the setup process
-    private func setupImpl() async throws(CAError) {
+    private func setupImpl() async throws(CAFetchError) {
         guard state == .initializing else {
             return
         }
@@ -252,10 +260,10 @@ private extension CAFetcher {
     }
     
     /// Implementation of loading next page
-    private func loadNextIfAnyImpl() async throws(CAError) {
+    private func loadNextIfAnyImpl() async throws(CAFetchError) {
         guard hasNext else {
             assertionFailure("loadNextIfAny should not be called when there is no next page")
-            throw .fetchFailed(.noMoreNextPage)
+            throw .noMoreNextPage
         }
         
         try await load(reset: false)
@@ -263,14 +271,14 @@ private extension CAFetcher {
     
     /// Core loading function that handles both initial loads and pagination
     /// - Parameter reset: Whether to reset pagination information
-    private func load(reset: Bool) async throws(CAError) {
+    private func load(reset: Bool) async throws(CAFetchError) {
         guard reset || hasNext else {
             return
         }
         
         // Prevent concurrent load operations
         guard state == .idle else {
-            return
+            throw CAFetchError.lastPageIsLoading
         }
         
         state = .loading
@@ -283,9 +291,9 @@ private extension CAFetcher {
                     params = params.setEndCursor(nil)
                 }
                 
-                try await fetch(viewId: viewId, allPages: allPages)
+                try await fetch(allPages: allPages)
             case .fetchOne:
-                try await fetch(viewId: nil)
+                try await fetch()
             }
             
             state = .idle
@@ -299,15 +307,14 @@ private extension CAFetcher {
     /// - Parameters:
     ///   - viewId: Optional view identifier for mapping
     ///   - allPages: Whether to fetch all pages
-    private func fetch(viewId: String?, allPages: Bool = false) async throws(CAError) {
+    private func fetch(allPages: Bool = false) async throws(CAFetchError) {
         let isFetchOne = viewId == nil
         let isFirstFetch = pageInfo == nil
+        let viewId = viewId
          
         // Fetch items from the network
         let newItems = try await CAFetchError.catch { @Sendable in
             try await fetchItems(fetchAll: allPages)
-        } mapTo: {
-            CAError.fetchFailed($0)
         }
         
         // Determine the final set of items based on fetch type and existing items
@@ -326,7 +333,7 @@ private extension CAFetcher {
         }
         
         // Update the database with the fetched items
-        try await CAError.catch { @Sendable in
+        try await CAFetchError.catch { @Sendable in
             try await database.write { db in
                 // Delete existing mappings if a view ID is provided
                 if let viewId {
@@ -362,8 +369,8 @@ private extension CAFetcher {
     
     /// Load items from the database
     /// - Parameter all: Whether to load all items or just the first page
-    private func loadRequest(all: Bool) async throws(CAError) {
-        try await CAError.catch { @Sendable in
+    private func loadRequest(all: Bool) async throws(CAFetchError) {
+        try await CAFetchError.catch { @Sendable in
             try await $fetchedItems.load(
                 ItemRequest(
                     fetchType: fetchType,
@@ -422,7 +429,14 @@ private extension CAFetcher {
     }
 }
 
+// MARK: - Database Extension
+
 private extension Database {
+    /// Deletes item maps for a specific view and item type
+    /// - Parameters:
+    ///  - viewId: The identifier of the view
+    ///  - itemTypeName: The type name of the items to delete
+    ///  - Throws: An error if the SQL execution fails
     func deleteItemMapsForView(_ viewId: String, itemTypeName: String) throws {
         try execute(sql:
             """

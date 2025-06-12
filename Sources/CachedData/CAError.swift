@@ -24,6 +24,7 @@ public enum CAFetchError: NotifiableError {
     case graphQLError([String])
     case noMoreNextPage
     case maxPageReached
+    case lastPageIsLoading
     case caught(Error)
     
     public var userNotable: Bool {
@@ -33,6 +34,7 @@ public enum CAFetchError: NotifiableError {
         case .noMoreNextPage: false
         case .maxPageReached: true
         case .caught: true
+        case .lastPageIsLoading: false
         }
     }
     
@@ -46,6 +48,8 @@ public enum CAFetchError: NotifiableError {
             "没有更多数据可加载"
         case .maxPageReached:
             "已达到最大页数限制"
+        case .lastPageIsLoading:
+            "最后一页正在加载中，请稍后再试"
         case .caught(let error):
             ErrorKit.userFriendlyMessage(for: error)
         }
@@ -66,23 +70,6 @@ public enum CAMutationError: NotifiableError {
             "未登录"
         case .noAffectedRows:
             "没有影响到任何数据，请检查操作是否正确"
-        case .caught(let error):
-            ErrorKit.userFriendlyMessage(for: error)
-        }
-    }
-}
-
-public enum CAError: NotifiableError {
-    case fetchFailed(CAFetchError)
-    case mutationFailed(CAMutationError)
-    case caught(Error)
-    
-    public var userFriendlyMessage: String {
-        switch self {
-        case .mutationFailed(let error):
-            ErrorKit.userFriendlyMessage(for: error)
-        case .fetchFailed(let error):
-            ErrorKit.userFriendlyMessage(for: error)
         case .caught(let error):
             ErrorKit.userFriendlyMessage(for: error)
         }
