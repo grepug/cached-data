@@ -21,7 +21,13 @@ public struct StoredCacheItem: Identifiable, Sendable {
     var state: Int
     
     var caState: CAItemState {
-        .init(rawValue: state) ?? .normal
+        get {
+            .init(rawValue: state) ?? .normal
+        }
+        
+        set {
+            state = newValue.rawValue
+        }
     }
     
     public init(id: String, type_name: String, created_at: Date, json_string: String, state: CAItemState = .normal) {

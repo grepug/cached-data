@@ -16,9 +16,9 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
     var fetchType: CAFetchType?
     var loadingAll = false
     
-    public typealias Value = [Item]
+    typealias Value = [Item]
     
-    public func fetch(_ db: Database) throws -> Value {
+    func fetch(_ db: Database) throws -> Value {
         switch fetchType {
         case .fetchOne(let id):
             guard let item = (try StoredCacheItem

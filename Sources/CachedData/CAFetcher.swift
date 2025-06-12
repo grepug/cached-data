@@ -33,6 +33,8 @@ public class CAFetcher<Item: CAItem>  {
     
     var pageInfo: PageInfo?
     
+    var itemFilter: ((Item) -> Bool)?
+    
     enum State: Int {
         case initializing, loadingFirst, idle, loading
     }
@@ -80,7 +82,10 @@ public class CAFetcher<Item: CAItem>  {
     var cancellables = Set<AnyCancellable>()
     
     public var items: [Item] {
-        fetchedItems
+        fetchedItems.filter {
+            $0.caState != .deleting &&
+            itemFilter?(item) != false
+        }
     }
     
     public var item: Item {
@@ -95,9 +100,10 @@ public class CAFetcher<Item: CAItem>  {
         pageInfo?.hasNext == true
     }
     
-    public init(_ fetchType: CAFetchType, itemType: Item.Type, params: Params) {
+    public init(_ fetchType: CAFetchType, itemType: Item.Type, params: Params, itemFilter: ((Item) -> Bool)? = nil) {
         self.fetchType = fetchType
         self.params = params
+        self.itemFilter = itemFilter
         
         // ⚠️ FIXME: it possibly cause a self retain cycle
         caCacheUpdatedSubject
@@ -225,14 +231,18 @@ private extension CAFetcher {
             CAError.fetchFailed($0)
         }
         
-        let finalItems: [Item] = if isFirstFetch || isFetchOne {
+        let finalItems: [Item] = if isFirstFetch {
             newItems
+        } else if isFetchOne && !newItems.isEmpty {
+            newItems
+        } else if isFetchOne {
+            fetchedItems
         } else {
             fetchedItems + newItems
         }
         
         if isFetchOne {
-            assert(finalItems.count == 1)
+            assert(finalItems.count <= 1)
         }
         
         try await CAError.catch { @Sendable in

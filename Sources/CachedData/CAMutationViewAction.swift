@@ -9,13 +9,13 @@ import Foundation
 import SharingGRDB
 
 public protocol CAMutationViewAction: Sendable {
-    associatedtype Kind: Sendable
+    associatedtype Kind: Sendable, Hashable
     associatedtype Cache: Sendable = ()
     
     var viewId: String { get }
     var kind: Kind { get }
     
-    static var noAction: Self { get }
+//    static var noAction: Self { get }
     
     func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws
     func cacheAfterMutation(item: any CAMutableItem) async throws
@@ -23,7 +23,7 @@ public protocol CAMutationViewAction: Sendable {
 }
 
 public struct CAInsertViewAction: CAMutationViewAction {
-    public enum Kind: Sendable {
+    public enum Kind: Sendable, Hashable {
         case prepend
         case append
         case insertBefore(id: String)
@@ -37,13 +37,17 @@ public struct CAInsertViewAction: CAMutationViewAction {
     @Dependency(\.caLogger) var logger
     @Dependency(\.defaultDatabase) var db
     
-    public init(viewId: String, kind: Kind) {
+    init(_ kind: Kind, viewId: String) {
         self.viewId = viewId
         self.kind = kind
     }
     
+    public static func action(_ kind: Kind, viewId: String) -> Self {
+        self.init(kind, viewId: viewId)
+    }
+    
     public static var noAction: CAInsertViewAction {
-        self.init(viewId: "", kind: .noAction)
+        self.init(.noAction, viewId: "")
     }
 
     public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
@@ -66,9 +70,9 @@ public struct CAInsertViewAction: CAMutationViewAction {
 }
 
 public struct CAUpdateViewAction: CAMutationViewAction {
-    public enum Kind: Sendable {
+    public enum Kind: Sendable, Hashable {
         case deleteCacheForView
-        case noAction
+        case refresh
     }
     
     public struct Cache: Sendable {
@@ -82,14 +86,18 @@ public struct CAUpdateViewAction: CAMutationViewAction {
     @Dependency(\.caLogger) var logger
     @Dependency(\.defaultDatabase) var db
     
-    public init(viewId: String, kind: Kind) {
+    init(_ kind: Kind, viewId: String) {
         self.viewId = viewId
         self.kind = kind
     }
     
-    public static var noAction: CAUpdateViewAction {
-        self.init(viewId: "", kind: .noAction)
+    public static func action(_ kind: Kind, viewId: String) -> Self {
+        self.init(kind, viewId: viewId)
     }
+    
+//    public static var noAction: CAUpdateViewAction {
+//        self.init(.refresh, viewId: "")
+//    }
     
     public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
         try await db.write { db in
@@ -117,28 +125,40 @@ public struct CAUpdateViewAction: CAMutationViewAction {
 private extension CAInsertViewAction {
     func handleBeforeInsertion(db: Database, item: any CAMutableItem) throws {
         let typeName = type(of: item).typeName
-        let order: Double
+        
+        try StoredCacheItem
+            .insert(or: .fail, item.toCacheItem(state: .inserting))
+            .execute(db)
         
         switch kind {
-        case .prepend:
+        case .prepend, .append:
             logger.info("Handling prepend action")
             
-            order = (try StoredCacheItemMap
-                .where { $0.view_id == viewId }
-                .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
-                .limit(1)
-                .order(by: \.order)
-                .fetchOne(db)
-                .map { $0.0 }?
-                .order ?? 0) - 1
-//            order = (try StoredCacheItemMap
-//                .where { $0.view_id == viewId }
-//                .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
-//                .limit(1)
-//                .order { $0.order.desc() }
-//                .fetchOne(db)
-//                .map { $0.0 }?
-//                .order ?? 0) + 1
+            let offset: Double = kind == .prepend ? -1 : 1
+            var order: Double
+            
+            if kind == .prepend {
+                order = try StoredCacheItemMap
+                    .where { $0.view_id == viewId }
+                    .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+                    .limit(1)
+                    .order(by: \.order)
+                    .fetchOne(db)
+                    .map { $0.0 }?
+                    .order ?? 0
+            } else {
+                order = try StoredCacheItemMap
+                    .where { $0.view_id == viewId }
+                    .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+                    .limit(1)
+                    .order { a, _ in a.order.desc() }
+                    .fetchOne(db)
+                    .map { $0.0 }?
+                    .order ?? 0
+            }
+            
+            order += offset
+            
             let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: order)
             
             try StoredCacheItemMap
@@ -161,8 +181,6 @@ private extension CAInsertViewAction {
     }
     
     func handleRollbackInsertion(db: Database, item: any CAMutableItem) throws {
-        let typeName = type(of: item).typeName
-        
         switch kind {
         case .prepend, .append, .insertAfter, .insertBefore:
             logger.info("Handling rollback for prepend action")
@@ -186,31 +204,25 @@ private extension CAInsertViewAction {
 
 private extension CAUpdateViewAction {
     func handleBeforeUpdating(db: Database, item: any CAMutableItem) throws {
-        let typeName = type(of: item).typeName
-        
-        switch kind {
-            // in case of moving item from one view to another, it means the item no longer belongs to the current view
-        case .deleteCacheForView:
-            logger.info("Handling delete cache for view action")
-                
-            try changeState(item, state: .updating, db: db)
-            
-            logger.info("Deleted cache item and map for view \(viewId)")
-        case .noAction:
-            break
-        }
+        try StoredCacheItem
+            .where { $0.id == item.idString }
+            .update {
+                $0.state = CAItemState.updating.rawValue
+                $0.json_string = item.toCacheItem(state: .updating).json_string
+            }
+            .execute(db)
     }
     
     func handleAfterUpdating(db: Database, item: any CAMutableItem) throws {
+        try changeState(item, state: .normal, db: db)
+        
         switch kind {
         case .deleteCacheForView:
-            try changeState(item, state: .normal, db: db)
-            
             try StoredCacheItemMap
                 .where { $0.view_id == viewId && $0.item_id == item.idString }
                 .delete()
                 .execute(db)
-        case .noAction:
+        case .refresh:
             break
         }
     }
@@ -222,16 +234,11 @@ private extension CAUpdateViewAction {
             return
         }
         
-        switch kind {
-        case .deleteCacheForView:
-            try changeState(item, state: .normal, db: db)
-            
-            try StoredCacheItem
-                .update(oldItem)
-                .execute(db)
-        case .noAction:
-            break
-        }
+        try changeState(item, state: .normal, db: db)
+        
+        try StoredCacheItem
+            .update(oldItem)
+            .execute(db)
     }
 }
 
