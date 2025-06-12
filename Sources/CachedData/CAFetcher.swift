@@ -10,30 +10,6 @@ import ErrorKit
 import SharingGRDB
 import Combine
 
-// MARK: - Cache Update Event Definition
-
-/// Structure representing a cache update event that can be published to notify subscribers.
-struct CACacheUpdateEvent {
-    /// Types of cache update events
-    enum Kind {
-        /// Indicates items should be reloaded after new data was inserted
-        case reloadAfterInsertion
-    }
-    
-    /// The view identifier associated with this event
-    let viewId: String
-    
-    /// The type name of the item that was updated
-    let itemTypeName: String
-    
-    /// The kind of update event
-    let kind: Kind
-}
-
-/// Global subject for broadcasting cache update events throughout the app
-@MainActor
-let caCacheUpdatedSubject = PassthroughSubject<CACacheUpdateEvent, Never>()
-
 // MARK: - CAFetcher Class
 
 /// A generic fetcher class that manages loading, caching, and retrieving items
@@ -58,6 +34,8 @@ public class CAFetcher<Item: CAItem> {
         case loading       // Currently fetching data
     }
     
+    public var reloadError: CAFetchError?
+    
     /// Current state of the fetcher
     var state = State.initializing
     
@@ -69,12 +47,15 @@ public class CAFetcher<Item: CAItem> {
     // MARK: - Fetch Parameters & Configuration
     
     /// Parameters used for fetching items
+    @ObservationIgnored
     var params: Params
     
     /// Information about pagination for fetched items
+    @ObservationIgnored
     var pageInfo: PageInfo?
     
     /// Optional filter to apply to items
+    @ObservationIgnored
     var itemFilter: ((Item) -> Bool)?
     
     /// Determines the fetch strategy (fetch one item or fetch multiple items)
@@ -108,7 +89,7 @@ public class CAFetcher<Item: CAItem> {
     
     /// Set of cancellables for managing subscriptions
     @ObservationIgnored
-    var cancellables = Set<AnyCancellable>()
+    var cancellable: AnyCancellable?
     
     // MARK: - Item Storage & Access
     
@@ -186,14 +167,11 @@ public class CAFetcher<Item: CAItem> {
         self.params = params
         self.itemFilter = itemFilter
         
-        // Subscribe to cache update events for this item type
-        // ⚠️ FIXME: This might cause a self retain cycle - consider alternative approaches
-        caCacheUpdatedSubject
+        cancellable = caCacheReloadSubject
             .filter { $0.itemTypeName == Item.typeName }
             .sink { [weak self] event in
                 self?.handleEvent(event)
             }
-            .store(in: &cancellables)
     }
     
     deinit {
@@ -428,11 +406,28 @@ private extension CAFetcher {
     
     /// Handle cache update events
     /// - Parameter event: The event to handle
-    func handleEvent(_ event: CACacheUpdateEvent) {
-        switch event.kind {
-        case .reloadAfterInsertion:
-            Task {
+    func handleEvent(_ event: CACacheReloadEvent) {
+        if let currentViewId = viewId {
+            if let viewId = event.viewId {
+                guard viewId == currentViewId else {
+                    return
+                }
+            }
+            
+            guard !event.excludingViewIds.contains(currentViewId) else {
+                return
+            }
+        }
+        
+        Task {
+            do {
                 try await load(reset: true)
+            } catch {
+                if let error = error as? CAFetchError {
+                    reloadError = error
+                } else {
+                    logger.error("Failed to reload items: \(error)")
+                }
             }
         }
     }
