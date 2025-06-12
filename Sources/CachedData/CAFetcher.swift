@@ -169,7 +169,12 @@ public class CAFetcher<Item: CAItem> {
     ///   - itemType: The type of item to fetch
     ///   - params: Parameters for fetching
     ///   - itemFilter: Optional filter to apply to fetched items
-    public init(_ fetchType: CAFetchType, itemType: Item.Type, params: Params, itemFilter: ((Item) -> Bool)? = nil) {
+    public init(
+        _ fetchType: CAFetchType,
+        itemType: Item.Type,
+        params: Params,
+        itemFilter: ((Item) -> Bool)? = nil,
+    ) {
         self.fetchType = fetchType
         self.params = params
         self.itemFilter = itemFilter

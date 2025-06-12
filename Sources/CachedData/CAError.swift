@@ -20,8 +20,6 @@ public extension NotifiableError {
 public enum CAFetchError: NotifiableError {
     static let maxPageCount = 100
     
-    case noData
-    case serverFailure(String)
     case noMoreNextPage
     case maxPageReached
     case lastPageIsLoading
@@ -29,21 +27,15 @@ public enum CAFetchError: NotifiableError {
     
     public var userNotable: Bool {
         switch self {
-        case .noData: false
-        case .serverFailure: true
         case .noMoreNextPage: false
+        case .lastPageIsLoading: false
         case .maxPageReached: true
         case .caught: true
-        case .lastPageIsLoading: false
         }
     }
     
     public var userFriendlyMessage: String {
         switch self {
-        case .noData:
-            "没有获取到数据"
-        case .serverFailure(let message):
-            "服务器错误: \(message)"
         case .noMoreNextPage:
             "没有更多数据可加载"
         case .maxPageReached:

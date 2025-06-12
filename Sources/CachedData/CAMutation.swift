@@ -42,47 +42,45 @@ public class DataMutation: CAMutation {
     
     public func update<Item>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError) where Item : CAMutableItem {
         do {
-            var cache = CAUpdateViewAction.Cache()
-            
-            try await action.cacheBeforeMutation(item: item, cache: &cache)
-
-            do {
-                try await item.update()
-            } catch {
-                try await action.cacheRollback(item: item, cache: &cache)
-                throw error
+            try await CAMutationError.catch { @Sendable in
+                var cache = CAUpdateViewAction.Cache()
+                
+                try await action.cacheBeforeMutation(item: item, cache: &cache)
+                
+                do {
+                    try await item.update()
+                } catch {
+                    try await action.cacheRollback(item: item, cache: &cache)
+                    throw error
+                }
+                
+                try await action.cacheAfterMutation(item: item)
             }
-            
-            try await action.cacheAfterMutation(item: item)
         } catch {
             logger.error(error)
-            
-            try CAMutationError.catch {
-                throw error
-            }
+            throw error
         }
     }
     
     public func insert<Item>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError) where Item : CAMutableItem {
         do {
-            var cache = CAInsertViewAction.Cache()
-
-            try await action.cacheBeforeMutation(item: item, cache: &cache)
-
-            do {
-                try await item.insert()
-            } catch {
-                try await action.cacheRollback(item: item, cache: &cache)
-                throw error
+            try await CAMutationError.catch { @Sendable in
+                var cache = CAInsertViewAction.Cache()
+                
+                try await action.cacheBeforeMutation(item: item, cache: &cache)
+                
+                do {
+                    try await item.insert()
+                } catch {
+                    try await action.cacheRollback(item: item, cache: &cache)
+                    throw error
+                }
+                
+                try await action.cacheAfterMutation(item: item)
             }
-            
-            try await action.cacheAfterMutation(item: item)
         } catch {
             logger.error(error)
-            
-            try CAMutationError.catch { @Sendable in
-                throw error
-            }
+            throw error
         }
     }
 }
