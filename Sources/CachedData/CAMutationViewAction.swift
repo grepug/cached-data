@@ -12,7 +12,7 @@ public protocol CAMutationViewAction: Sendable {
     associatedtype Kind: Sendable, Hashable
     associatedtype Cache: Sendable = ()
     
-    var viewId: String { get }
+    var viewId: String? { get }
     var kind: Kind { get }
     
 //    static var noAction: Self { get }
@@ -31,7 +31,7 @@ public struct CAInsertViewAction: CAMutationViewAction {
         case noAction
     }
     
-    public let viewId: String
+    public let viewId: String?
     public let kind: Kind
     
     public struct Cache: Sendable {}
@@ -39,12 +39,12 @@ public struct CAInsertViewAction: CAMutationViewAction {
     @Dependency(\.caLogger) var logger
     @Dependency(\.defaultDatabase) var db
     
-    init(_ kind: Kind, viewId: String) {
+    init(_ kind: Kind, viewId: String?) {
         self.viewId = viewId
         self.kind = kind
     }
     
-    public static func action(_ kind: Kind, viewId: String) -> Self {
+    public static func action(_ kind: Kind, viewId: String? = nil) -> Self {
         self.init(kind, viewId: viewId)
     }
     
@@ -82,18 +82,18 @@ public struct CAUpdateViewAction: CAMutationViewAction {
     }
     
     
-    public let viewId: String
+    public let viewId: String?
     public let kind: Kind
     
     @Dependency(\.caLogger) var logger
     @Dependency(\.defaultDatabase) var db
     
-    init(_ kind: Kind, viewId: String) {
+    init(_ kind: Kind, viewId: String?) {
         self.viewId = viewId
         self.kind = kind
     }
     
-    public static func action(_ kind: Kind, viewId: String) -> Self {
+    public static func action(_ kind: Kind, viewId: String? = nil) -> Self {
         self.init(kind, viewId: viewId)
     }
     
@@ -161,13 +161,15 @@ private extension CAInsertViewAction {
             
             order += offset
             
-            let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: order)
-            
-            try StoredCacheItemMap
-                .insert(map)
-                .execute(db)
-            
-            logger.info("Inserted map into StoredCacheItemMap table")
+            if let viewId {
+                let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: order)
+                
+                try StoredCacheItemMap
+                    .insert(map)
+                    .execute(db)
+                
+                logger.info("Inserted map into StoredCacheItemMap table")
+            }
         case .noAction:
             break
         default:
@@ -192,12 +194,14 @@ private extension CAInsertViewAction {
                 .delete()
                 .execute(db)
             
-            try StoredCacheItemMap
-                .where { $0.view_id == viewId && $0.item_id == item.idString }
-                .delete()
-                .execute(db)
-            
-            logger.info("Deleted cache item and map for view \(viewId)")
+            if let viewId {
+                try StoredCacheItemMap
+                    .where { $0.view_id == viewId && $0.item_id == item.idString }
+                    .delete()
+                    .execute(db)
+                
+                logger.info("Deleted cache item and map for view \(viewId)")
+            }
         case .noAction:
             break
         }
