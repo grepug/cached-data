@@ -1,5 +1,5 @@
 //
-//  DataFetcher.swift
+//  CAFetcher.swift
 //  ContextBackendModels
 //
 //  Created by Kai Shao on 2025/6/4.
@@ -10,53 +10,125 @@ import ErrorKit
 import SharingGRDB
 import Combine
 
+// MARK: - Cache Update Event Definition
+
+/// Structure representing a cache update event that can be published to notify subscribers.
 struct CACacheUpdateEvent {
+    /// Types of cache update events
     enum Kind {
+        /// Indicates items should be reloaded after new data was inserted
         case reloadAfterInsertion
     }
     
+    /// The view identifier associated with this event
     let viewId: String
+    
+    /// The type name of the item that was updated
     let itemTypeName: String
+    
+    /// The kind of update event
     let kind: Kind
 }
 
+/// Global subject for broadcasting cache update events throughout the app
 @MainActor
 let caCacheUpdatedSubject = PassthroughSubject<CACacheUpdateEvent, Never>()
 
+// MARK: - CAFetcher Class
+
+/// A generic fetcher class that manages loading, caching, and retrieving items
+/// of type `Item` which conforms to the `CAItem` protocol.
+///
+/// This class provides functionality for initial loading, pagination, and database caching.
 @Observable
 @MainActor
-public class CAFetcher<Item: CAItem>  {
+public class CAFetcher<Item: CAItem> {
+    // MARK: - Type Aliases
+    
     typealias PageInfo = Item.PageInfo
     public typealias Params = Item.Params
     
-    var params: Params
+    // MARK: - Fetch State Management
     
-    var pageInfo: PageInfo?
-    
-    var itemFilter: ((Item) -> Bool)?
-    
+    /// Represents the current state of the fetcher
     enum State: Int {
-        case initializing, loadingFirst, idle, loading
+        case initializing  // Initial state before any fetch operations
+        case loadingFirst  // Loading first batch of data
+        case idle          // Ready for next fetch operation
+        case loading       // Currently fetching data
     }
     
+    /// Current state of the fetcher
     var state = State.initializing
     
+    /// Indicates whether initial data has been fetched
     public var initialFetched: Bool {
         state.rawValue >= State.idle.rawValue
     }
     
+    // MARK: - Fetch Parameters & Configuration
+    
+    /// Parameters used for fetching items
+    var params: Params
+    
+    /// Information about pagination for fetched items
+    var pageInfo: PageInfo?
+    
+    /// Optional filter to apply to items
+    var itemFilter: ((Item) -> Bool)?
+    
+    /// Determines the fetch strategy (fetch one item or fetch multiple items)
     @ObservationIgnored
     let fetchType: CAFetchType
     
+    // MARK: - Dependencies & Resources
+    
+    /// Database access
     @ObservationIgnored
     @Dependency(\.defaultDatabase) var database
     
+    /// Logger for error reporting
     @ObservationIgnored
     @Dependency(\.caLogger) var logger
     
+    /// Set of cancellables for managing subscriptions
+    @ObservationIgnored
+    var cancellables = Set<AnyCancellable>()
+    
+    // MARK: - Item Storage & Access
+    
+    /// Items fetched from the database or network
     @ObservationIgnored
     @Fetch(ItemRequest<Item>()) var fetchedItems = []
     
+    /// Filtered items excluding deleted ones and applying custom filter
+    public var items: [Item] {
+        fetchedItems.filter {
+            $0.caState != .deleting &&
+            itemFilter?($0) != false
+        }
+    }
+    
+    /// First item or a default initialized one if none exists
+    public var item: Item {
+        fetchedItems.first ?? .init()
+    }
+    
+    /// Optional first item, nil if no items exist
+    public var optionalItem: Item? {
+        fetchedItems.first
+    }
+    
+    // MARK: - Pagination Support
+    
+    /// Indicates whether more pages are available for fetching
+    public var hasNext: Bool {
+        pageInfo?.hasNext == true
+    }
+    
+    // MARK: - Publishers
+    
+    /// Publisher for the first item
     public var itemPublisher: AnyPublisher<Item, Never> {
         $fetchedItems
             .publisher
@@ -64,48 +136,38 @@ public class CAFetcher<Item: CAItem>  {
             .eraseToAnyPublisher()
     }
     
+    /// Publisher for all items
     public var itemsPublisher: AnyPublisher<[Item], Never> {
         $fetchedItems
             .publisher
             .eraseToAnyPublisher()
     }
     
+    /// AsyncSequence version of itemPublisher
     public var asyncItem: AsyncPublisher<some Publisher<Item, Never>> {
         itemPublisher.values
     }
     
+    /// AsyncSequence version of itemsPublisher
     public var asyncItems: AsyncPublisher<some Publisher<Array<Item>, Never>> {
         itemsPublisher.values
     }
     
-    @ObservationIgnored
-    var cancellables = Set<AnyCancellable>()
+    // MARK: - Initialization & Lifecycle
     
-    public var items: [Item] {
-        fetchedItems.filter {
-            $0.caState != .deleting &&
-            itemFilter?(item) != false
-        }
-    }
-    
-    public var item: Item {
-        fetchedItems.first ?? .init()
-    }
-    
-    public var optionalItem: Item? {
-        fetchedItems.first
-    }
-    
-    public var hasNext: Bool {
-        pageInfo?.hasNext == true
-    }
-    
+    /// Initialize a new CAFetcher with specified parameters
+    /// - Parameters:
+    ///   - fetchType: Strategy for fetching (one or multiple items)
+    ///   - itemType: The type of item to fetch
+    ///   - params: Parameters for fetching
+    ///   - itemFilter: Optional filter to apply to fetched items
     public init(_ fetchType: CAFetchType, itemType: Item.Type, params: Params, itemFilter: ((Item) -> Bool)? = nil) {
         self.fetchType = fetchType
         self.params = params
         self.itemFilter = itemFilter
         
-        // ⚠️ FIXME: it possibly cause a self retain cycle
+        // Subscribe to cache update events for this item type
+        // ⚠️ FIXME: This might cause a self retain cycle - consider alternative approaches
         caCacheUpdatedSubject
             .filter { $0.itemTypeName == Item.typeName }
             .sink { [weak self] event in
@@ -118,14 +180,21 @@ public class CAFetcher<Item: CAItem>  {
         print("deinit CAFetcher for \(Item.typeName)")
     }
     
+    // MARK: - Public API
+    
+    /// Fetches a single item without using the cache
+    /// - Returns: The fetched item or nil if none exists
     public func loadItemWithoutCache() async throws -> Item? {
         try await loadItemsWithoutCache().first
     }
     
+    /// Fetches items without using the cache
+    /// - Returns: Array of fetched items
     public func loadItemsWithoutCache() async throws -> [Item] {
         try await Item.fetch(params: params).0
     }
     
+    /// Set up the fetcher and perform initial load
     public func setup() async throws(CAError) {
         do {
             try await setupImpl()
@@ -136,6 +205,7 @@ public class CAFetcher<Item: CAItem>  {
         }
     }
     
+    /// Reload all items
     public func reload() async throws(CAError) {
         do {
             try await load(reset: true)
@@ -145,6 +215,7 @@ public class CAFetcher<Item: CAItem>  {
         }
     }
     
+    /// Load the next page if available
     public func loadNextIfAny() async throws(CAError) {
         do {
             try await loadNextIfAnyImpl()
@@ -155,7 +226,10 @@ public class CAFetcher<Item: CAItem>  {
     }
 }
 
+// MARK: - Private Implementation
+
 private extension CAFetcher {
+    /// Implementation of the setup process
     private func setupImpl() async throws(CAError) {
         guard state == .initializing else {
             return
@@ -165,10 +239,8 @@ private extension CAFetcher {
         
         try await loadRequest(all: false)
         
-        // ensure the items are loaded
-//        if !fetchedItems.isEmpty {
-            state = .idle
-//        }
+        // Set to idle state regardless of whether items were loaded
+        state = .idle
         
         try await load(reset: true)
         
@@ -179,6 +251,7 @@ private extension CAFetcher {
         }
     }
     
+    /// Implementation of loading next page
     private func loadNextIfAnyImpl() async throws(CAError) {
         guard hasNext else {
             assertionFailure("loadNextIfAny should not be called when there is no next page")
@@ -188,12 +261,14 @@ private extension CAFetcher {
         try await load(reset: false)
     }
     
+    /// Core loading function that handles both initial loads and pagination
+    /// - Parameter reset: Whether to reset pagination information
     private func load(reset: Bool) async throws(CAError) {
         guard reset || hasNext else {
             return
         }
         
-        // if we are not in idle state, we should not load again
+        // Prevent concurrent load operations
         guard state == .idle else {
             return
         }
@@ -216,21 +291,26 @@ private extension CAFetcher {
             state = .idle
         } catch {
             state = .idle
-            
             throw error
         }
     }
     
+    /// Fetch items and update the database
+    /// - Parameters:
+    ///   - viewId: Optional view identifier for mapping
+    ///   - allPages: Whether to fetch all pages
     private func fetch(viewId: String?, allPages: Bool = false) async throws(CAError) {
         let isFetchOne = viewId == nil
         let isFirstFetch = pageInfo == nil
          
+        // Fetch items from the network
         let newItems = try await CAFetchError.catch { @Sendable in
             try await fetchItems(fetchAll: allPages)
         } mapTo: {
             CAError.fetchFailed($0)
         }
         
+        // Determine the final set of items based on fetch type and existing items
         let finalItems: [Item] = if isFirstFetch {
             newItems
         } else if isFetchOne && !newItems.isEmpty {
@@ -245,34 +325,28 @@ private extension CAFetcher {
             assert(finalItems.count <= 1)
         }
         
+        // Update the database with the fetched items
         try await CAError.catch { @Sendable in
             try await database.write { db in
-                // delete all maps
-                
+                // Delete existing mappings if a view ID is provided
                 if let viewId {
-                    try db.execute(sql:
-                        """
-                        DELETE FROM "storedCacheItemMaps"
-                        WHERE "view_id" = '\(viewId)'
-                          AND "item_id" IN (
-                            SELECT "id" FROM "storedCacheItems"
-                            WHERE "type_name" = '\(Item.typeName)'
-                          );                
-                        """
-                    )
+                    try db.deleteItemMapsForView(viewId, itemTypeName: Item.typeName)
                 }
                 
                 let items = finalItems.map { $0.toCacheItem(state: .normal) }
                 
+                // Check for duplicates to avoid database conflicts
                 assert(
                     items.count == Set(items.map(\.id)).count,
                     "There are duplicate items in the fetched items",
                 )
                 
+                // Insert or replace items
                 try StoredCacheItem
                     .insert(or: .replace, items)
                     .execute(db)
                 
+                // Create mappings if a view ID is provided
                 if let viewId {
                     let maps = finalItems.enumerated().map { index, item in
                         StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: Double(index))
@@ -286,6 +360,8 @@ private extension CAFetcher {
         }
     }
     
+    /// Load items from the database
+    /// - Parameter all: Whether to load all items or just the first page
     private func loadRequest(all: Bool) async throws(CAError) {
         try await CAError.catch { @Sendable in
             try await $fetchedItems.load(
@@ -298,11 +374,15 @@ private extension CAFetcher {
         }
     }
     
+    /// Fetch items from the network with pagination support
+    /// - Parameter fetchAll: Whether to fetch all pages
+    /// - Returns: Array of fetched items
     private func fetchItems(fetchAll: Bool) async throws -> [Item] {
         var finalItems: [Item] = []
         var fetched = false
         var maxPage = CAFetchError.maxPageCount
         
+        // Fetch items page by page
         while (hasNext && fetchAll) || !fetched {
             fetched = true
             
@@ -315,11 +395,13 @@ private extension CAFetcher {
             
             maxPage -= 1
             
+            // Safety mechanism to prevent infinite loops
             if maxPage == 0 {
                 throw CAFetchError.maxPageReached
             }
         }
         
+        // Check for duplicates
         assert(
             finalItems.count == Set(finalItems.map(\.idString)).count,
             "There are duplicate items in the fetched items",
@@ -328,6 +410,8 @@ private extension CAFetcher {
         return finalItems
     }
     
+    /// Handle cache update events
+    /// - Parameter event: The event to handle
     func handleEvent(_ event: CACacheUpdateEvent) {
         switch event.kind {
         case .reloadAfterInsertion:
@@ -335,5 +419,20 @@ private extension CAFetcher {
                 try await load(reset: true)
             }
         }
+    }
+}
+
+private extension Database {
+    func deleteItemMapsForView(_ viewId: String, itemTypeName: String) throws {
+        try execute(sql:
+            """
+            DELETE FROM "storedCacheItemMaps"
+            WHERE "view_id" = '\(viewId)'
+              AND "item_id" IN (
+                SELECT "id" FROM "storedCacheItems"
+                WHERE "type_name" = '\(itemTypeName)'
+              );
+            """
+        )
     }
 }
