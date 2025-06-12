@@ -89,6 +89,13 @@ public class CAFetcher<Item: CAItem> {
         }
     }
     
+    var isFetchOne: Bool {
+        switch fetchType {
+        case .fetchOne: true
+        case .fetchAll: false
+        }
+    }
+    
     // MARK: - Dependencies & Resources
     
     /// Database access
@@ -257,10 +264,8 @@ private extension CAFetcher {
         
         try await load(reset: true)
         
-        try await loadRequest(all: true)
-        
-        if state != .idle {
-            state = .idle
+        if !isFetchOne {
+            try await loadRequest(all: true)
         }
     }
     
@@ -313,13 +318,12 @@ private extension CAFetcher {
     ///   - viewId: Optional view identifier for mapping
     ///   - allPages: Whether to fetch all pages
     private func fetch(allPages: Bool = false) async throws(CAFetchError) {
-        let isFetchOne = viewId == nil
         let isFirstFetch = pageInfo == nil
         let viewId = viewId
          
         // Fetch items from the network
         let newItems = try await CAFetchError.catch { @Sendable in
-            try await fetchItems(fetchAll: allPages)
+            try await fetchItems(fetchAllPages: allPages)
         }
         
         // Determine the final set of items based on fetch type and existing items
@@ -389,13 +393,13 @@ private extension CAFetcher {
     /// Fetch items from the network with pagination support
     /// - Parameter fetchAll: Whether to fetch all pages
     /// - Returns: Array of fetched items
-    private func fetchItems(fetchAll: Bool) async throws -> [Item] {
+    private func fetchItems(fetchAllPages: Bool) async throws -> [Item] {
         var finalItems: [Item] = []
         var fetched = false
         var maxPage = CAFetchError.maxPageCount
         
         // Fetch items page by page
-        while (hasNext && fetchAll) || !fetched {
+        while (hasNext && fetchAllPages) || !fetched {
             fetched = true
             
             let result = try await Item.fetch(params: params)
