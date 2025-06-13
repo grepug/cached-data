@@ -193,9 +193,9 @@ public class CAFetcher<Item: CAItem> {
     }
     
     /// Set up the fetcher and perform initial load
-    public func setup() async throws(CAFetchError) {
+    public func setup(cacheOnly: Bool = false) async throws(CAFetchError) {
         do {
-            try await setupImpl()
+            try await setupImpl(cacheOnly: cacheOnly)
         } catch {
             logger.error(ErrorKit.userFriendlyMessage(for: error), [
                 "trace": "\(ErrorKit.errorChainDescription(for: error))"
@@ -227,9 +227,13 @@ public class CAFetcher<Item: CAItem> {
 // MARK: - Private Implementation
 
 private extension CAFetcher {
+    var hasSetup: Bool {
+        state != .initializing
+    }
+    
     /// Implementation of the setup process
-    private func setupImpl() async throws(CAFetchError) {
-        guard state == .initializing else {
+    func setupImpl(cacheOnly: Bool) async throws(CAFetchError) {
+        guard !hasSetup else {
             return
         }
         
@@ -240,15 +244,17 @@ private extension CAFetcher {
         // Set to idle state regardless of whether items were loaded
         state = .idle
         
-        try await load(reset: true)
-        
-        if !isFetchOne {
-            try await loadRequest(all: true)
+        if !cacheOnly {
+            try await load(reset: true)
+            
+            if !isFetchOne {
+                try await loadRequest(all: true)
+            }
         }
     }
     
     /// Implementation of loading next page
-    private func loadNextIfAnyImpl() async throws(CAFetchError) {
+    func loadNextIfAnyImpl() async throws(CAFetchError) {
         guard hasNext else {
             assertionFailure("loadNextIfAny should not be called when there is no next page")
             throw .noMoreNextPage
@@ -259,7 +265,9 @@ private extension CAFetcher {
     
     /// Core loading function that handles both initial loads and pagination
     /// - Parameter reset: Whether to reset pagination information
-    private func load(reset: Bool) async throws(CAFetchError) {
+    func load(reset: Bool) async throws(CAFetchError) {
+        assert(hasSetup)
+        
         guard reset || hasNext else {
             return
         }
@@ -295,7 +303,7 @@ private extension CAFetcher {
     /// - Parameters:
     ///   - viewId: Optional view identifier for mapping
     ///   - allPages: Whether to fetch all pages
-    private func fetch(allPages: Bool = false) async throws(CAFetchError) {
+    func fetch(allPages: Bool = false) async throws(CAFetchError) {
         let isFirstFetch = pageInfo == nil
         let viewId = viewId
          
@@ -356,7 +364,7 @@ private extension CAFetcher {
     
     /// Load items from the database
     /// - Parameter all: Whether to load all items or just the first page
-    private func loadRequest(all: Bool) async throws(CAFetchError) {
+    func loadRequest(all: Bool) async throws(CAFetchError) {
         try await CAFetchError.catch { @Sendable in
             try await $fetchedItems.load(
                 ItemRequest(
@@ -371,7 +379,7 @@ private extension CAFetcher {
     /// Fetch items from the network with pagination support
     /// - Parameter fetchAll: Whether to fetch all pages
     /// - Returns: Array of fetched items
-    private func fetchItems(fetchAllPages: Bool) async throws -> [Item] {
+    func fetchItems(fetchAllPages: Bool) async throws -> [Item] {
         var finalItems: [Item] = []
         var fetched = false
         var maxPage = CAFetchError.maxPageCount
