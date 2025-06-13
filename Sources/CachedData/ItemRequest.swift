@@ -12,11 +12,22 @@ public enum CAFetchType: Hashable, Sendable {
     case fetchAll(viewId: String, allPages: Bool)
 }
 
+public enum CAFetchedValue<Item: CAItem>: Sendable {
+    /// The initial state when no fetch has been performed yet.
+    case initial
+    /// fetched but the result is empty.
+    /// useful when fetching a single item.
+    case empty
+    /// fetched with items
+    case fetched([Item])
+}
+
 struct ItemRequest<Item: CAItem>: FetchKeyRequest {
     var fetchType: CAFetchType?
     var loadingAll = false
+    var hasFetchedFromRemote = false
     
-    typealias Value = [Item]
+    typealias Value = CAFetchedValue<Item>
     
     func fetch(_ db: Database) throws -> Value {
         switch fetchType {
@@ -25,15 +36,15 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
                 .where { $0.type_name == Item.typeName }
                 .where { $0.id == id }
                 .fetchOne(db)) else {
-                    return []
+                    return hasFetchedFromRemote ? .empty : .initial
                 }
 
-            return [
-                .init(fromCacheJSONString: item.json_string, state: item.caState)
-            ]
+                return .fetched([
+                    .init(fromCacheJSONString: item.json_string, state: item.caState)
+                ])
         case .fetchAll(let viewId, _):
             let itemPerPage = 30
-            let limit = CAFetchError.maxPageCount * itemPerPage
+            let max = CAFetchError.maxPageCount * itemPerPage
             let cacheLimit = 15
             
             let items = try StoredCacheItem
@@ -41,14 +52,14 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
                 .where { a, _ in a.type_name == Item.typeName }
                 .where { $1.view_id == viewId }
                 .order { $1.order }
-                .limit(loadingAll ? limit : cacheLimit)
+                .limit(loadingAll ? max : cacheLimit)
                 .fetchAll(db)
             
-            return items.map { item, map in
+            return .fetched(items.map { item, map in
                     .init(fromCacheJSONString: item.json_string, state: item.caState)
-            }
+            })
         case nil:
-            return []
+            return .initial
         }
     }
 }

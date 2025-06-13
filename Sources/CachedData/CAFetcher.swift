@@ -93,26 +93,33 @@ public class CAFetcher<Item: CAItem> {
     
     // MARK: - Item Storage & Access
     
+    public typealias FetchedValue = CAFetchedValue<Item>
+    
     /// Items fetched from the database or network
     @ObservationIgnored
-    @Fetch(ItemRequest<Item>()) var fetchedItems = []
+    @Fetch(ItemRequest<Item>()) var fetchedItems = .initial
     
     /// Filtered items excluding deleted ones and applying custom filter
     public var items: [Item] {
-        fetchedItems.filter {
-            $0.caState != .deleting &&
-            itemFilter?($0) != false
+        switch fetchedItems {
+        case .fetched(let items):
+            items.filter {
+                $0.caState != .deleting &&
+                itemFilter?($0) != false
+            }
+        case .empty, .initial:
+            []
         }
     }
     
     /// First item or a default initialized one if none exists
     public var item: Item {
-        fetchedItems.first ?? .init()
+        items.first ?? .init()
     }
     
     /// Optional first item, nil if no items exist
     public var optionalItem: Item? {
-        fetchedItems.first
+        items.first
     }
     
     // MARK: - Pagination Support
@@ -128,12 +135,31 @@ public class CAFetcher<Item: CAItem> {
     public var itemPublisher: AnyPublisher<Item, Never> {
         $fetchedItems
             .publisher
-            .compactMap { $0.first }
+            .compactMap { item in
+                switch item {
+                case .fetched(let items): items.first
+                case .empty, .initial: nil
+                }
+            }
             .eraseToAnyPublisher()
     }
     
     /// Publisher for all items
     public var itemsPublisher: AnyPublisher<[Item], Never> {
+        $fetchedItems
+            .publisher
+            .compactMap { item in
+                switch item {
+                case .fetched(let items): items
+                case .empty: []
+                case .initial: nil
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    /// Publisher for fetched values, providing a wrapper around items
+    public var fetchedValuePublisher: AnyPublisher<FetchedValue, Never> {
         $fetchedItems
             .publisher
             .eraseToAnyPublisher()
@@ -147,6 +173,11 @@ public class CAFetcher<Item: CAItem> {
     /// AsyncSequence version of itemsPublisher
     public var asyncItems: AsyncPublisher<some Publisher<Array<Item>, Never>> {
         itemsPublisher.values
+    }
+    
+    /// AsyncSequence version of fetchedValuePublisher
+    public var asyncFetchedValue: AsyncPublisher<some Publisher<FetchedValue, Never>> {
+        fetchedValuePublisher.values
     }
     
     // MARK: - Initialization & Lifecycle
@@ -179,18 +210,6 @@ public class CAFetcher<Item: CAItem> {
     }
     
     // MARK: - Public API
-    
-    /// Fetches a single item without using the cache
-    /// - Returns: The fetched item or nil if none exists
-    public func loadItemWithoutCache() async throws -> Item? {
-        try await loadItemsWithoutCache().first
-    }
-    
-    /// Fetches items without using the cache
-    /// - Returns: Array of fetched items
-    public func loadItemsWithoutCache() async throws -> [Item] {
-        try await Item.fetch(params: params).items
-    }
     
     /// Set up the fetcher and perform initial load
     public func setup(cacheOnly: Bool = false) async throws(CAFetchError) {
@@ -248,7 +267,7 @@ private extension CAFetcher {
             try await load(reset: true)
             
             if !isFetchOne {
-                try await loadRequest(all: true)
+                try await loadRequest()
             }
         }
     }
@@ -318,9 +337,9 @@ private extension CAFetcher {
         } else if isFetchOne && !newItems.isEmpty {
             newItems
         } else if isFetchOne {
-            fetchedItems
+            items
         } else {
-            fetchedItems + newItems
+            items + newItems
         }
         
         if isFetchOne {
@@ -364,12 +383,13 @@ private extension CAFetcher {
     
     /// Load items from the database
     /// - Parameter all: Whether to load all items or just the first page
-    func loadRequest(all: Bool) async throws(CAFetchError) {
+    func loadRequest(all: Bool = true, hasFetchedFromRemote: Bool = false) async throws(CAFetchError) {
         try await CAFetchError.catch { @Sendable in
             try await $fetchedItems.load(
                 ItemRequest(
                     fetchType: fetchType,
                     loadingAll: all,
+                    hasFetchedFromRemote: hasFetchedFromRemote,
                 ),
                 animation: .default,
             )
@@ -408,6 +428,8 @@ private extension CAFetcher {
             finalItems.count == Set(finalItems.map(\.idString)).count,
             "There are duplicate items in the fetched items",
         )
+        
+        try await loadRequest(hasFetchedFromRemote: true)
         
         return finalItems
     }
