@@ -28,7 +28,7 @@ public struct CAFetchResult<Item: Sendable, PageInfo: CAItemPageInfo>: Sendable 
     }
 }
 
-public protocol CAItem: Codable, Sendable, Identifiable {
+public protocol CAItem: Codable, Sendable, Identifiable, Hashable {
     associatedtype PageInfo: CAItemPageInfo
     associatedtype Params: CAItemParams
     

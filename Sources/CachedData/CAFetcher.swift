@@ -131,48 +131,11 @@ public class CAFetcher<Item: CAItem> {
     
     // MARK: - Publishers
     
-    /// Publisher for the first item
-    public var itemPublisher: AnyPublisher<Item, Never> {
-        $fetchedItems
-            .publisher
-            .compactMap { item in
-                switch item {
-                case .fetched(let items): items.first
-                case .empty, .initial: nil
-                }
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    /// Publisher for all items
-    public var itemsPublisher: AnyPublisher<[Item], Never> {
-        $fetchedItems
-            .publisher
-            .compactMap { item in
-                switch item {
-                case .fetched(let items): items
-                case .empty: []
-                case .initial: nil
-                }
-            }
-            .eraseToAnyPublisher()
-    }
-    
     /// Publisher for fetched values, providing a wrapper around items
     public var fetchedValuePublisher: AnyPublisher<FetchedValue, Never> {
         $fetchedItems
             .publisher
             .eraseToAnyPublisher()
-    }
-    
-    /// AsyncSequence version of itemPublisher
-    public var asyncItem: AsyncPublisher<some Publisher<Item, Never>> {
-        itemPublisher.values
-    }
-    
-    /// AsyncSequence version of itemsPublisher
-    public var asyncItems: AsyncPublisher<some Publisher<Array<Item>, Never>> {
-        itemsPublisher.values
     }
     
     /// AsyncSequence version of fetchedValuePublisher

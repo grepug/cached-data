@@ -12,14 +12,40 @@ public enum CAFetchType: Hashable, Sendable {
     case fetchAll(viewId: String, allPages: Bool)
 }
 
-public enum CAFetchedValue<Item: CAItem>: Sendable {
+public enum CAFetchedValue<Item: CAItem>: Sendable, Hashable {
     /// The initial state when no fetch has been performed yet.
     case initial
-    /// fetched but the result is empty.
-    /// useful when fetching a single item.
+    /// fetched from the server but the result is empty.
+    ///
+    /// It is used to determine the existence of an item.
     case empty
     /// fetched with items
     case fetched([Item])
+    
+    /// fetched from the server but the result is empty.
+    ///
+    /// It is used to determine the existence of an item.
+    public var isEmpty: Bool {
+        if case .empty = self {
+            return true
+        }
+        
+        return false
+    }
+    
+    public var items: [Item] {
+        switch self {
+        case .initial, .empty: []
+        case .fetched(let items): items
+        }
+    }
+    
+    public var optionalItem: Item? {
+        switch self {
+        case .initial, .empty: nil
+        case .fetched(let items): items.first
+        }
+    }
 }
 
 struct ItemRequest<Item: CAItem>: FetchKeyRequest {
