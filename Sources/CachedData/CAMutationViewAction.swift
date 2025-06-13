@@ -100,9 +100,17 @@ public struct CAUpdateViewAction: CAMutationViewAction {
 //    }
     
     public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
-        try await db.write { db in
+        let oldItem = try await db.write { db in
+            let oldItem = try StoredCacheItem
+                .where { $0.id == item.idString }
+                .fetchOne(db)
+            
             try handleBeforeUpdating(db: db, item: item)
+            
+            return oldItem
         }
+        
+        cache.oldItem = oldItem
     }
     
     public func cacheAfterMutation(item: any CAMutableItem) async throws {
