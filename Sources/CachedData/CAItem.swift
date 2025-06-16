@@ -49,8 +49,25 @@ public protocol CAItem: Codable, Sendable, Identifiable, Hashable {
 
 public protocol CAMutableItem: CAItem {
     func update() async throws(CAMutationError)
-    
     func insert() async throws(CAMutationError)
-    
     func delete() async throws(CAMutationError)
+    
+    /// uncomment to implement batch operations
+//    static func update(items: [Self]) async throws(CAMutationError)
+//    static func insert(items: [Self]) async throws(CAMutationError)
+//    static func delete(items: [Self]) async throws(CAMutationError)
 }
+
+//public extension CAMutableItem {
+//    func update() async throws(CAMutationError) {
+//        try await Self.update(items: [self])
+//    }
+//    
+//    func insert() async throws(CAMutationError) {
+//        try await Self.insert(items: [self])
+//    }
+//    
+//    func delete() async throws(CAMutationError) {
+//        try await Self.delete(items: [self])
+//    }
+//}
