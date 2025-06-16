@@ -9,8 +9,15 @@ import Foundation
 import SharingGRDB
 
 extension DatabaseWriter where Self == DatabaseQueue {
-    static func observableModelDatabase(path: String) -> Self {
-        let databaseQueue = try! DatabaseQueue(path: path)
+    static func observableModelDatabase(path: DatabasePath) -> Self {
+        let databaseQueue: DatabaseQueue
+
+        switch path {
+        case .stored(let path):
+            databaseQueue = try! DatabaseQueue(path: path)
+        case .inMemory:
+            databaseQueue = try! DatabaseQueue()
+        }
         
         print("CachedData database path", databaseQueue.path)
         
@@ -67,6 +74,10 @@ extension DatabaseWriter where Self == DatabaseQueue {
     }
 }
 
-public func setupCacheDatabase(path: String) {
+public enum DatabasePath {
+    case stored(path: String), inMemory
+}
+
+public func setupCacheDatabase(path: DatabasePath = .inMemory) {
     prepareDependencies { $0.defaultDatabase = .observableModelDatabase(path: path) }
 }
