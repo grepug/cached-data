@@ -71,7 +71,6 @@ public struct CAInsertViewAction: CAMutationViewAction {
 
 public struct CAUpdateViewAction: CAMutationViewAction {
     public enum Kind: Sendable, Hashable {
-        case deleteCacheForView
         case refresh
     }
     
@@ -223,16 +222,6 @@ private extension CAUpdateViewAction {
     
     func handleAfterUpdating(db: Database, item: any CAMutableItem) throws {
         try changeState(item, state: .normal, db: db)
-        
-        switch kind {
-        case .deleteCacheForView:
-            try StoredCacheItemMap
-                .where { $0.view_id == viewId && $0.item_id == item.idString }
-                .delete()
-                .execute(db)
-        case .refresh:
-            break
-        }
     }
     
     func handleRollbackUpdating(db: Database, item: any CAMutableItem, cache: Cache) throws {

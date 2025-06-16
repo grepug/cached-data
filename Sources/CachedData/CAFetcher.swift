@@ -5,7 +5,7 @@
 //  Created by Kai Shao on 2025/6/4.
 //
 
-import Foundation
+import SwiftUI
 import ErrorKit
 import SharingGRDB
 import Combine
@@ -57,6 +57,9 @@ public class CAFetcher<Item: CAItem> {
     /// Optional filter to apply to items
     @ObservationIgnored
     var itemFilter: ((Item) -> Bool)?
+    
+    @ObservationIgnored
+    let animation: Animation
     
     /// Determines the fetch strategy (fetch one item or fetch multiple items)
     @ObservationIgnored
@@ -155,11 +158,13 @@ public class CAFetcher<Item: CAItem> {
         _ fetchType: CAFetchType,
         itemType: Item.Type,
         params: Params,
+        animation: Animation = .spring(duration: 0.3),
         itemFilter: ((Item) -> Bool)? = nil,
     ) {
         self.fetchType = fetchType
         self.params = params
         self.itemFilter = itemFilter
+        self.animation = animation
         
         cancellable = caCacheReloadSubject
             .filter { $0.itemTypeName == Item.typeName }
@@ -354,7 +359,7 @@ private extension CAFetcher {
                     loadingAll: all,
                     hasFetchedFromRemote: hasFetchedFromRemote,
                 ),
-                animation: .default,
+                animation: animation,
             )
         }
     }
