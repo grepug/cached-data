@@ -95,10 +95,6 @@ public struct CAUpdateViewAction: CAMutationViewAction {
         self.init(kind, viewId: viewId)
     }
     
-//    public static var noAction: CAUpdateViewAction {
-//        self.init(.refresh, viewId: "")
-//    }
-    
     public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
         let oldItem = try await db.write { db in
             let oldItem = try StoredCacheItem
@@ -135,7 +131,7 @@ private extension CAInsertViewAction {
         let typeName = type(of: item).typeName
         
         try StoredCacheItem
-            .insert(or: .fail, item.toCacheItem(state: .inserting))
+            .insert(or: .fail) { item.toCacheItem(state: .inserting) }
             .execute(db)
         
         switch kind {
@@ -171,7 +167,7 @@ private extension CAInsertViewAction {
                 let map = StoredCacheItemMap(view_id: viewId, item_id: item.idString, order: order)
                 
                 try StoredCacheItemMap
-                    .insert(map)
+                    .insert { map }
                     .execute(db)
                 
                 logger.info("Inserted map into StoredCacheItemMap table")

@@ -327,7 +327,7 @@ private extension CAFetcher {
                 
                 // Insert or replace items
                 try StoredCacheItem
-                    .insert(or: .replace, items)
+                    .insert(or: .replace) { items }
                     .execute(db)
                 
                 // Create mappings if a view ID is provided
@@ -337,7 +337,7 @@ private extension CAFetcher {
                     }
                     
                     try StoredCacheItemMap
-                        .insert(or: .replace, maps)
+                        .insert(or: .replace) { maps }
                         .execute(db)
                 }
             }
