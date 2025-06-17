@@ -187,6 +187,8 @@ public class CAFetcher<Item: CAItem> {
             logger.error(ErrorKit.userFriendlyMessage(for: error), [
                 "trace": "\(ErrorKit.errorChainDescription(for: error))"
             ])
+            
+            throw error
         }
     }
     
