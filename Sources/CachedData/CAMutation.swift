@@ -11,7 +11,19 @@ import SharingGRDB
 struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
-    
+
+    /// Updates the cache item for the given item with the specified state.
+    func updateCache<Item>(_ item: Item, state: CAItemState) async throws(CAMutationError) where Item : CAItem {
+        try await CAMutationError.catch { @Sendable in
+            try await db.write { db in
+                try StoredCacheItem
+                    .where { $0.id == item.idString }
+                    .update { $0.json_string = item.toCacheItem(state: state).json_string }
+                    .execute(db)
+            }
+        }
+    }
+
     func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String]) {
         // Publish a cache reload event to notify subscribers
         caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))
