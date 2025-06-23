@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/sharing-grdb.git",
       "state" : {
-        "revision" : "27aa92082156aaaecd002620ff200723eaf3f239",
-        "version" : "0.4.1"
+        "revision" : "9ccd88799dcf20c2f2ba8cd2771de5031bebab05",
+        "version" : "0.5.0"
       }
     },
     {
@@ -141,8 +141,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/swift-structured-queries",
       "state" : {
-        "revision" : "79ac5f57218502356738b647ee9449c7603f9004",
-        "version" : "0.6.0"
+        "revision" : "6bd870099083ef269eeee8835808cb6233151654",
+        "version" : "0.7.0"
       }
     },
     {
