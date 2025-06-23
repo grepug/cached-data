@@ -16,6 +16,7 @@ public protocol CAHandlers: Sendable {
     func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError)
     func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String])
 
+    func fetchSingleCache<Item: CAItem>(id: String, forType type: Item.Type) async throws -> Item?
     func updateCache<Item>(_ item: Item, state: CAItemState) async throws(CAMutationError) where Item : CAItem
 }
 

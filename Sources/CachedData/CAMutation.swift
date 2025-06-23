@@ -12,6 +12,15 @@ struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
 
+    func fetchSingleCache<Item>(id: String, forType type: Item.Type) async throws -> Item? where Item : CAItem {
+            try await db.read { db in
+                try StoredCacheItem
+                    .where { $0.id == id }
+                    .fetchOne(db)
+                    .map { .init(fromCacheJSONString: $0.json_string, state: $0.caState) }
+            }
+    }
+
     /// Updates the cache item for the given item with the specified state.
     func updateCache<Item>(_ item: Item, state: CAItemState) async throws(CAMutationError) where Item : CAItem {
         try await CAMutationError.catch { @Sendable in
