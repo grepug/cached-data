@@ -12,13 +12,23 @@ struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
 
-    func fetchSingleCache<Item>(id: String, forType type: Item.Type) async throws -> Item? where Item : CAItem {
-            try await db.read { db in
-                try StoredCacheItem
-                    .where { $0.id == id }
-                    .fetchOne(db)
-                    .map { .init(fromCacheJSONString: $0.json_string, state: $0.caState) }
-            }
+    func fetchCachedItem<Item>(id: String, forType type: Item.Type) async throws -> Item? where Item : CAItem {
+        try await db.read { db in
+            try StoredCacheItem
+                .where { $0.id == id }
+                .fetchOne(db)
+                .map { .init(fromCacheJSONString: $0.json_string, state: $0.caState) }
+        }
+    }
+
+    func fetchCachedItems<Item>(ids: [String], forType type: Item.Type) async throws -> [Item] where Item : CAItem {
+        try await db.read { db in
+            try StoredCacheItem
+                .where { $0.id.in(ids) }
+                .fetchAll(db)
+                .map { .init(fromCacheJSONString: $0.json_string, state: $0.caState) }
+                .sorted { ids.firstIndex(of: $0.idString) ?? 0 < ids.firstIndex(of: $1.idString) ?? 0 }
+        }
     }
 
     /// Updates the cache item for the given item with the specified state.
