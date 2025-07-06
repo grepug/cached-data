@@ -43,6 +43,28 @@ struct Handlers: CAHandlers {
         }
     }
 
+    /// Inserts a new cache item for the given item with the specified state.
+    func insertCache<Item>(_ item: Item, state: CAItemState, viewId: String) async throws(CAMutationError) where Item : CAItem {
+        try await CAMutationError.catch { @Sendable in
+            try await db.write { db in
+                try StoredCacheItem
+                    .insert { item.toCacheItem(state: state) }
+                    .execute(db)
+
+                // Update the view ID for the inserted item
+                try StoredCacheItemMap
+                    .insert { 
+                        StoredCacheItemMap(
+                            view_id: viewId,
+                            item_id: item.idString, 
+                            order: -1,
+                        )
+                    }
+                    .execute(db)
+            }
+        }
+    }
+
     func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String]) {
         // Publish a cache reload event to notify subscribers
         caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))

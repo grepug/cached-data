@@ -19,6 +19,7 @@ public protocol CAHandlers: Sendable {
     func fetchCachedItem<Item: CAItem>(id: String, forType type: Item.Type) async throws -> Item?
     func fetchCachedItems<Item: CAItem>(ids: [String], forType type: Item.Type) async throws -> [Item]
     func updateCache<Item>(_ item: Item, state: CAItemState) async throws(CAMutationError) where Item : CAItem
+    func insertCache<Item>(_ item: Item, state: CAItemState, viewId: String) async throws(CAMutationError) where Item : CAItem
 }
 
 public extension CAHandlers {
