@@ -24,6 +24,16 @@ public enum CAFetchError: NotifiableError {
     case maxPageReached
     case lastPageIsLoading
     case caught(Error)
+
+    public var isCancellationError: Bool {
+        if case .caught(let error) = self {
+            if error is CancellationError {
+                return true
+            }
+        }
+
+        return false
+    }
     
     public var userNotable: Bool {
         switch self {
