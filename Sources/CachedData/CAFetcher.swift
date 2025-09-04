@@ -211,6 +211,19 @@ public class CAFetcher<Item: CAItem> {
             throw error
         }
     }
+    
+    /// Set new parameters and optionally reload data
+    /// - Parameters:
+    ///   - params: New parameters to use for fetching
+    ///   - reload: Whether to immediately reload data with new parameters (default: true)
+    public func setParams(_ params: Params, reload: Bool = true) async throws(CAFetchError) {
+        self.params = params
+        self.pageInfo = nil // Reset pagination when params change
+        
+        if reload && hasSetup {
+            try await self.reload()
+        }
+    }
 }
 
 // MARK: - Private Implementation
