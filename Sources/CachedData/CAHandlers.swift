@@ -9,7 +9,6 @@ import Dependencies
 
 public typealias Dep = Dependency
 
-@MainActor
 public protocol CAHandlers: Sendable {
     func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError)
     func insert<Item: CAMutableItem>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError)
@@ -30,6 +29,8 @@ public extension CAHandlers {
 
 private enum MutationKey: DependencyKey {
     static let liveValue: any CAHandlers = Handlers()
+    static let testValue: any CAHandlers = Handlers()
+    static let previewValue: any CAHandlers = Handlers()
 }
 
 public extension DependencyValues {

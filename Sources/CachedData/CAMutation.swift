@@ -7,7 +7,6 @@
 
 import SharingGRDB
 
-@MainActor
 struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db
     @Dependency(\.caLogger) var logger
@@ -67,7 +66,9 @@ struct Handlers: CAHandlers {
 
     func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String]) {
         // Publish a cache reload event to notify subscribers
-        caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))
+        Task { @MainActor in
+            caCacheReloadSubject.send(.init(viewId: viewId, excludingViewIds: excludingViewIds, itemTypeName: Item.typeName))
+        }
     }
     
     func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError) {
