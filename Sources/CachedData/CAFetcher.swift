@@ -268,7 +268,9 @@ private extension CAFetcher {
     /// Core loading function that handles both initial loads and pagination
     /// - Parameter reset: Whether to reset pagination information
     func load(reset: Bool) async throws(CAFetchError) {
-        assert(hasSetup)
+        guard hasSetup else {
+            return
+        }
         
         guard reset || hasNext else {
             return
