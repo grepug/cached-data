@@ -27,7 +27,7 @@ public class CAFetcher<Item: CAItem> {
     // MARK: - Fetch State Management
     
     /// Represents the current state of the fetcher
-    enum State: Int {
+    public enum State: Int, Hashable {
         case initializing  // Initial state before any fetch operations
         case loadingFirst  // Loading first batch of data
         case idle          // Ready for next fetch operation
@@ -37,7 +37,7 @@ public class CAFetcher<Item: CAItem> {
     public var reloadError: CAFetchError?
     
     /// Current state of the fetcher
-    var state = State.initializing
+    public var state = State.initializing
     
     /// Indicates whether initial data has been fetched
     public var initialFetched: Bool {
