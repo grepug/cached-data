@@ -27,7 +27,7 @@ public class CAFetcher<Item: CAItem> {
     // MARK: - Fetch State Management
     
     /// Represents the current state of the fetcher
-    public enum State: Int, Hashable {
+    public enum State: Int {
         case initializing  // Initial state before any fetch operations
         case loadingFirst  // Loading first batch of data
         case idle          // Ready for next fetch operation
@@ -93,6 +93,10 @@ public class CAFetcher<Item: CAItem> {
     /// Set of cancellables for managing subscriptions
     @ObservationIgnored
     var cancellable: AnyCancellable?
+    
+    /// Current fetch task that can be cancelled
+    @ObservationIgnored
+    private var fetchTask: Task<Void, Error>?
     
     // MARK: - Item Storage & Access
     
@@ -276,8 +280,14 @@ private extension CAFetcher {
             return
         }
         
-        // Prevent concurrent load operations
-        guard state == .idle else {
+        // Cancel any ongoing fetch operation if resetting
+        if reset {
+            fetchTask?.cancel()
+            fetchTask = nil
+        }
+        
+        // Prevent concurrent load operations (unless resetting, which cancels the previous one)
+        guard reset || state == .idle else {
             throw CAFetchError.lastPageIsLoading
         }
         
@@ -288,18 +298,29 @@ private extension CAFetcher {
             params = params.setEndCursor(nil)
         }
         
-        do {
-            switch fetchType {
-            case .fetchAll(_, let allPages):
-                try await fetch(allPages: allPages)
-            case .fetchOne:
-                try await fetch()
+        // Create and store the fetch task
+        fetchTask = Task { @MainActor in
+            do {
+                switch fetchType {
+                case .fetchAll(_, let allPages):
+                    try await fetch(allPages: allPages)
+                case .fetchOne:
+                    try await fetch()
+                }
+                
+                state = .idle
+            } catch is CancellationError {
+                // Handle cancellation gracefully
+                state = .idle
+            } catch {
+                state = .idle
+                throw error
             }
-            
-            state = .idle
-        } catch {
-            state = .idle
-            throw error
+        }
+        
+        // Wait for the task to complete
+        try await CAFetchError.catch { @Sendable in
+            try await fetchTask?.value
         }
     }
     
@@ -316,6 +337,11 @@ private extension CAFetcher {
             try await fetchItems(fetchAllPages: allPages)
         }
         
+        // Check for cancellation after network fetch
+        guard !Task.isCancelled else {
+            return
+        }
+        
         // Determine the final set of items based on fetch type and existing items
         let finalItems: [Item] = if isFirstFetch {
             newItems
@@ -329,6 +355,11 @@ private extension CAFetcher {
         
         if isFetchOne {
             assert(finalItems.count <= 1)
+        }
+        
+        // Check for cancellation before database write
+        guard !Task.isCancelled else {
+            return
         }
         
         // Update the database with the fetched items
@@ -391,9 +422,15 @@ private extension CAFetcher {
         
         // Fetch items page by page
         while (hasNext && fetchAllPages) || !fetched {
+            // Check for cancellation before each page fetch
+            try Task.checkCancellation()
+            
             fetched = true
             
             let result = try await Item.fetch(params: params)
+            
+            // Check for cancellation after network fetch
+            try Task.checkCancellation()
             
             finalItems.append(contentsOf: result.items)
             
@@ -413,6 +450,9 @@ private extension CAFetcher {
             finalItems.count == Set(finalItems.map(\.idString)).count,
             "There are duplicate items in the fetched items",
         )
+        
+        // Check for cancellation before database update
+        try Task.checkCancellation()
         
         try await loadRequest(hasFetchedFromRemote: true)
         
