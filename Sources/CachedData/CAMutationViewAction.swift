@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SharingGRDB
+import SQLiteData
 
 public protocol CAMutationViewAction: Sendable {
     associatedtype Kind: Sendable, Hashable

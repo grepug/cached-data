@@ -13,7 +13,7 @@ let package = Package(
             targets: ["CachedData"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/pointfreeco/sharing-grdb.git", from: "0.4.1"),
+        .package(url: "https://github.com/pointfreeco/sqlite-data.git", from: "1.4.0"),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", from: "1.2.1"),
     ],
     targets: [
@@ -23,7 +23,7 @@ let package = Package(
             name: "CachedData",
             dependencies: [
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "SharingGRDB", package: "sharing-grdb"),
+                .product(name: "SQLiteData", package: "sqlite-data"),
             ]
         ),
         .testTarget(

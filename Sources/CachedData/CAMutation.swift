@@ -5,7 +5,7 @@
 //  Created by Kai Shao on 2025/6/6.
 //
 
-import SharingGRDB
+import SQLiteData
 
 struct Handlers: CAHandlers {
     @Dependency(\.defaultDatabase) var db

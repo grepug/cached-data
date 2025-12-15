@@ -7,7 +7,7 @@
 
 import SwiftUI
 import ErrorKit
-import SharingGRDB
+import SQLiteData
 import Combine
 
 // MARK: - CAFetcher Class

@@ -5,7 +5,7 @@
 //  Created by Kai Shao on 2025/6/5.
 //
 
-import SharingGRDB
+import SQLiteData
 
 public enum CAFetchType: Hashable, Sendable {
     case fetchOne(itemId: String)

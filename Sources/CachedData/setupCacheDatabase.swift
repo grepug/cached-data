@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import SharingGRDB
+import SQLiteData
 
 extension DatabaseWriter where Self == DatabaseQueue {
     static func observableModelDatabase(path: DatabasePath) -> Self {
