@@ -12,7 +12,7 @@ public typealias Dep = Dependency
 public protocol CAHandlers: Sendable {
     func delete<Item: CAMutableItem>(_ item: Item) async throws(CAMutationError)
     func insert<Item: CAMutableItem>(_ item: Item, action: CAInsertViewAction) async throws(CAMutationError)
-    func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError)
+    func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction, updatedId: String?) async throws(CAMutationError)
     func reload<Item: CAItem>(_ type: Item.Type, viewId: String?, excludingViewIds: [String])
 
     func fetchCachedItem<Item: CAItem>(id: String, forType type: Item.Type) async throws -> Item?
@@ -24,6 +24,11 @@ public protocol CAHandlers: Sendable {
 public extension CAHandlers {
     func reload<Item: CAItem>(forType type: Item.Type, viewId: String? = nil, excludingViewIds: [String] = []) {
         reload(type, viewId: viewId, excludingViewIds: excludingViewIds)
+    }
+    
+    /// Convenience method for updating without ID changes (backward compatibility)
+    func update<Item: CAMutableItem>(_ item: Item, action: CAUpdateViewAction) async throws(CAMutationError) {
+        try await update(item, action: action, updatedId: nil)
     }
 }
 
