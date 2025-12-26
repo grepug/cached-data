@@ -31,11 +31,11 @@ extension CALogger {
 
 public struct CALoggerPlaceholder: CALogger {
     public func info(_ message: String, _ info: [String: String]) {
-        fatalError("unimplemented")
+//        fatalError("unimplemented")
     }
     
     public func error(_ message: String, _ info: [String: String]) {
-        fatalError("unimplemented")
+//        fatalError("unimplemented")
     }
 }
 

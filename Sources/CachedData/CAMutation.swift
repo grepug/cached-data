@@ -305,8 +305,8 @@ private extension Handlers {
     /// than the temporary one used by the client (e.g., UUID → server-generated ID,
     /// or normalized canonical ID).
     ///
-    /// The update is performed atomically in a single database transaction to ensure
-    /// consistency between the cache item and its view mappings.
+    /// The operation deletes the old cache entry and inserts a new one with the updated ID,
+    /// then updates all view mappings. This is done atomically in a single transaction.
     ///
     /// - Parameters:
     ///   - oldId: The current ID of the item in the cache
@@ -317,10 +317,32 @@ private extension Handlers {
     func updateItemId(from oldId: String, to newId: String, typeName: String, viewId: String?) async throws(CAMutationError) {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
-                // Update the primary item ID in the cache
+                // Fetch the existing cache item
+                let oldItem = try StoredCacheItem
+                    .where { $0.id == oldId && $0.type_name == typeName }
+                    .fetchOne(db)
+                
+                guard let oldItem else {
+                    return
+                }
+                
+                // Delete the old row
                 try StoredCacheItem
                     .where { $0.id == oldId && $0.type_name == typeName }
-                    .update { $0.id = newId }
+                    .delete()
+                    .execute(db)
+                
+                // Insert new row with updated ID
+                try StoredCacheItem
+                    .insert {
+                        StoredCacheItem(
+                            id: newId,
+                            type_name: oldItem.type_name,
+                            created_at: oldItem.created_at,
+                            json_string: oldItem.json_string,
+                            state: oldItem.caState
+                        )
+                    }
                     .execute(db)
                 
                 // Update all view mappings that reference this item
