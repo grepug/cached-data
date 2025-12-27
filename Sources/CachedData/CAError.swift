@@ -63,6 +63,16 @@ public enum CAMutationError: NotifiableError {
     case noAffectedRows
     case unauthorized
     case caught(Error)
+
+    public var isCancellationError: Bool {
+        if case .caught(let error) = self {
+            if error is CancellationError {
+                return true
+            }
+        }
+
+        return false
+    }
     
     public var userFriendlyMessage: String {
         switch self {
