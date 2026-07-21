@@ -59,8 +59,8 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
         switch fetchType {
         case .fetchOne(let id):
             guard let item = (try StoredCacheItem
-                .where { $0.type_name == Item.typeName }
-                .where { $0.id == id }
+                .where { $0.type_name.eq(Item.typeName) }
+                .where { $0.id.eq(id) }
                 .fetchOne(db)) else {
                     return hasFetchedFromRemote ? .empty : .initial
                 }
@@ -75,8 +75,8 @@ struct ItemRequest<Item: CAItem>: FetchKeyRequest {
             
             let items = try StoredCacheItem
                 .join(StoredCacheItemMap.all) { $0.id.eq($1.item_id) }
-                .where { a, _ in a.type_name == Item.typeName }
-                .where { $1.view_id == viewId }
+                .where { a, _ in a.type_name.eq(Item.typeName) }
+                .where { $1.view_id.eq(viewId) }
                 .order { $1.order }
                 .limit(loadingAll ? max : cacheLimit)
                 .fetchAll(db)

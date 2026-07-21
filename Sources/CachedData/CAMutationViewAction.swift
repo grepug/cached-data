@@ -97,7 +97,7 @@ public struct CAUpdateViewAction: CAMutationViewAction {
     public func cacheBeforeMutation(item: any CAMutableItem, cache: inout Cache) async throws {
         let oldItem = try await db.write { db in
             let oldItem = try StoredCacheItem
-                .where { $0.id == item.idString }
+                .where { $0.id.eq(item.idString) }
                 .fetchOne(db)
             
             try handleBeforeUpdating(db: db, item: item)
@@ -138,21 +138,21 @@ private extension CAInsertViewAction {
             logger.info("Handling prepend action")
             
             let offset: Double = kind == .prepend ? -1 : 1
-            var order: Double
+            var order = 0.0
             
-            if kind == .prepend {
+            if let viewId, kind == .prepend {
                 order = try StoredCacheItemMap
-                    .where { $0.view_id == viewId }
-                    .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+                    .where { $0.view_id.eq(viewId) }
+                    .join(StoredCacheItem.where { $0.type_name.eq(typeName) }) { $0.item_id.eq($1.id) }
                     .limit(1)
-                    .order(by: \.order)
+                    .order { map, _ in map.order }
                     .fetchOne(db)
                     .map { $0.0 }?
                     .order ?? 0
-            } else {
+            } else if let viewId {
                 order = try StoredCacheItemMap
-                    .where { $0.view_id == viewId }
-                    .join(StoredCacheItem.where { $0.type_name == typeName }) { $0.item_id.eq($1.id) }
+                    .where { $0.view_id.eq(viewId) }
+                    .join(StoredCacheItem.where { $0.type_name.eq(typeName) }) { $0.item_id.eq($1.id) }
                     .limit(1)
                     .order { a, _ in a.order.desc() }
                     .fetchOne(db)
@@ -191,13 +191,13 @@ private extension CAInsertViewAction {
             logger.info("Handling rollback for prepend action")
             
             try StoredCacheItem
-                .where { $0.id == item.idString }
+                .where { $0.id.eq(item.idString) }
                 .delete()
                 .execute(db)
             
             if let viewId {
                 try StoredCacheItemMap
-                    .where { $0.view_id == viewId && $0.item_id == item.idString }
+                    .where { $0.view_id.eq(viewId) && $0.item_id.eq(item.idString) }
                     .delete()
                     .execute(db)
                 
@@ -212,7 +212,7 @@ private extension CAInsertViewAction {
 private extension CAUpdateViewAction {
     func handleBeforeUpdating(db: Database, item: any CAMutableItem) throws {
         try StoredCacheItem
-            .where { $0.id == item.idString }
+            .where { $0.id.eq(item.idString) }
             .update {
                 $0.state = CAItemState.updating.rawValue
                 $0.json_string = item.toCacheItem(state: .updating).json_string
@@ -242,7 +242,7 @@ private extension CAUpdateViewAction {
 extension CAMutationViewAction {
     func changeState<Item: CAItem>(_ item: Item, state: CAItemState, db: Database) throws {
         try StoredCacheItem.where {
-            $0.id == item.idString
+            $0.id.eq(item.idString)
         }
         .update { $0.state = state.rawValue }
         .execute(db)

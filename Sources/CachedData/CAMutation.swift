@@ -39,7 +39,7 @@ struct Handlers: CAHandlers {
     func fetchCachedItem<Item>(id: String, forType type: Item.Type) async throws -> Item? where Item : CAItem {
         try await db.read { db in
             try StoredCacheItem
-                .where { $0.id == id }
+                .where { $0.id.eq(id) }
                 .fetchOne(db)
                 .map { .init(fromCacheJSONString: $0.json_string, state: $0.caState) }
         }
@@ -77,7 +77,7 @@ struct Handlers: CAHandlers {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
                 try StoredCacheItem
-                    .where { $0.id == item.idString }
+                    .where { $0.id.eq(item.idString) }
                     .update { $0.json_string = item.toCacheItem(state: state).json_string }
                     .execute(db)
             }
@@ -265,7 +265,7 @@ private extension Handlers {
             try await CAMutationError.catch { @Sendable in
                 try await db.write { db in
                     try StoredCacheItem.where {
-                        $0.id == item.idString
+                        $0.id.eq(item.idString)
                     }
                     .delete()
                     .execute(db)
@@ -291,7 +291,7 @@ private extension Handlers {
         try await CAMutationError.catch { @Sendable in
             try await db.write { db in
                 try StoredCacheItem.where {
-                    $0.id == item.idString
+                    $0.id.eq(item.idString)
                 }
                 .update { $0.state = state.rawValue }
                 .execute(db)
@@ -319,7 +319,7 @@ private extension Handlers {
             try await db.write { db in
                 // Fetch the existing cache item
                 let oldItem = try StoredCacheItem
-                    .where { $0.id == oldId && $0.type_name == typeName }
+                    .where { $0.id.eq(oldId) && $0.type_name.eq(typeName) }
                     .fetchOne(db)
                 
                 guard let oldItem else {
@@ -328,7 +328,7 @@ private extension Handlers {
                 
                 // Delete the old row
                 try StoredCacheItem
-                    .where { $0.id == oldId && $0.type_name == typeName }
+                    .where { $0.id.eq(oldId) && $0.type_name.eq(typeName) }
                     .delete()
                     .execute(db)
                 
@@ -348,7 +348,7 @@ private extension Handlers {
                 // Update all view mappings that reference this item
                 if let viewId {
                     try StoredCacheItemMap
-                        .where { $0.view_id == viewId && $0.item_id == oldId }
+                        .where { $0.view_id.eq(viewId) && $0.item_id.eq(oldId) }
                         .update { $0.item_id = newId }
                         .execute(db)
                 }

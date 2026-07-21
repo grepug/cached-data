@@ -14,6 +14,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/pointfreeco/sqlite-data.git", from: "1.4.0"),
+        .package(url: "https://github.com/pointfreeco/swift-structured-queries", .upToNextMinor(from: "0.31.0")),
         .package(url: "https://github.com/FlineDev/ErrorKit.git", from: "1.2.1"),
     ],
     targets: [
